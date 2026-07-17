@@ -191,6 +191,7 @@ struct SessionListView: View {
                             onArchive: { archiveSession(session) },
                             onApprove: { approveSession(session) },
                             onReject: { rejectSession(session) },
+                            onApproveAlways: session.provider == .opencode ? { approveAlwaysSession(session) } : nil,
                             isKeyboardSelected: index == viewModel.keyboardSelectedIndex
                         )
                         .measureHeight(using: InstanceRowHeightKey.self) {
@@ -239,6 +240,10 @@ struct SessionListView: View {
 
     private func approveSession(_ session: SessionState) {
         sessionMonitor.approvePermission(sessionId: session.sessionId)
+    }
+
+    private func approveAlwaysSession(_ session: SessionState) {
+        sessionMonitor.approvePermission(sessionId: session.sessionId, always: true)
     }
 
     private func rejectSession(_ session: SessionState) {
@@ -357,6 +362,10 @@ struct InstanceRow: View {
     let onArchive: () -> Void
     let onApprove: () -> Void
     let onReject: () -> Void
+    /// Optional "Always allow" affordance. When non-nil, the inline approval
+    /// buttons render a third red-tinted button that grants a session-wide
+    /// allowance. Only wired up for OpenCode sessions.
+    let onApproveAlways: (() -> Void)?
     let isKeyboardSelected: Bool
 
     @State private var isHovered = false
@@ -467,21 +476,28 @@ struct InstanceRow: View {
                 // Show tool call when waiting for approval/input, otherwise last activity
                 if (isWaitingForApproval || isWaitingForTerminalApproval || isWaitingForUserInput),
                    let toolName = session.pendingToolName {
-                    // Show tool name in amber + input on same line
-                    HStack(spacing: 4) {
+                    // Tool name (amber, fixed) + marquee input (scrolls when long).
+                    // Both use the same system font (no monospaced) so their
+                    // baselines align naturally in the HStack.
+                    HStack(spacing: 6) {
                         Text(MCPToolFormatter.formatToolName(toolName))
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundColor(TerminalColors.amber.opacity(0.9))
+                            .fixedSize(horizontal: true, vertical: false)
                         if isInteractiveTool {
                             Text("Needs your input")
                                 .font(.system(size: 11))
                                 .foregroundColor(.white.opacity(0.5))
                                 .lineLimit(1)
                         } else if let input = session.pendingToolInput {
-                            Text(input)
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.5))
-                                .lineLimit(1)
+                            // Marquee scrolls the input horizontally when it
+                            // overflows, so long file paths stay readable.
+                            MarqueeText(
+                                text: input,
+                                font: .system(size: 11),
+                                color: .white.opacity(0.5)
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 } else if let role = session.lastMessageRole {
@@ -560,8 +576,10 @@ struct InstanceRow: View {
                 InlineApprovalButtons(
                     onChat: onChat,
                     onApprove: onApprove,
-                    onReject: onReject
+                    onReject: onReject,
+                    onApproveAlways: onApproveAlways
                 )
+                .layoutPriority(1)
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             } else {
                 HStack(spacing: 8) {
@@ -637,10 +655,27 @@ struct InlineApprovalButtons: View {
     let onChat: () -> Void
     let onApprove: () -> Void
     let onReject: () -> Void
+    /// When non-nil, an additional "Always" button is shown (red warning
+    /// text) that approves the tool and remembers the decision for the
+    /// session. Only OpenCode sessions populate this today.
+    let onApproveAlways: (() -> Void)?
 
     @State private var showChatButton = false
     @State private var showDenyButton = false
     @State private var showAllowButton = false
+    @State private var showAlwaysButton = false
+
+    init(
+        onChat: @escaping () -> Void,
+        onApprove: @escaping () -> Void,
+        onReject: @escaping () -> Void,
+        onApproveAlways: (() -> Void)? = nil
+    ) {
+        self.onChat = onChat
+        self.onApprove = onApprove
+        self.onReject = onReject
+        self.onApproveAlways = onApproveAlways
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -663,6 +698,7 @@ struct InlineApprovalButtons: View {
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
             .opacity(showDenyButton ? 1 : 0)
             .scaleEffect(showDenyButton ? 1 : 0.8)
 
@@ -678,8 +714,30 @@ struct InlineApprovalButtons: View {
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
             .opacity(showAllowButton ? 1 : 0)
             .scaleEffect(showAllowButton ? 1 : 0.8)
+
+            // Always button — only rendered when onApproveAlways is provided.
+            // Red text on the normal Allow-style background so it reads as
+            // a stronger variant of Allow rather than a danger button.
+            if let onApproveAlways {
+                Button {
+                    onApproveAlways()
+                } label: {
+                    Text("Always")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(Color(red: 0.92, green: 0.30, blue: 0.25))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.9))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
+                .opacity(showAlwaysButton ? 1 : 0)
+                .scaleEffect(showAlwaysButton ? 1 : 0.8)
+            }
         }
         .onAppear {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.0)) {
@@ -690,6 +748,11 @@ struct InlineApprovalButtons: View {
             }
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.1)) {
                 showAllowButton = true
+            }
+            if onApproveAlways != nil {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.15)) {
+                    showAlwaysButton = true
+                }
             }
         }
     }

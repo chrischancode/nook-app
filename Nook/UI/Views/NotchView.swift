@@ -750,7 +750,15 @@ struct NotchView: View {
                         }
 
                         if hasPendingPermission {
-                            PermissionIndicatorIcon(size: 16, color: Color(red: 0.85, green: 0.47, blue: 0.34))
+                            let pendingProvider: SessionProvider = {
+                                switch activePendingPermissionActivityType ?? .none {
+                                case .codex: return .codex
+                                case .opencode: return .opencode
+                                case .cursor: return .cursor
+                                case .claude, .none: return .claude
+                                }
+                            }()
+                            PermissionIndicatorIcon(size: 16, color: SessionLoadingStyle.tint(for: pendingProvider))
                                 .padding(1)
                                 .matchedGeometryEffect(id: "status-indicator", in: activityNamespace, isSource: showHeaderAgentActivity)
                         }

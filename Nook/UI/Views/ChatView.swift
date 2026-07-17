@@ -176,6 +176,13 @@ struct ChatView: View {
                     }
 
                     history = newHistory
+                    let lastAssistantLen: Int = {
+                        for item in newHistory.reversed() {
+                            if case .assistant(let text) = item.type { return text.count }
+                        }
+                        return 0
+                    }()
+                    print("[ChatView] history updated sessionId=\(sessionId) count=\(newHistory.count) lastAssistantLen=\(lastAssistantLen)")
 
                     // Auto-scroll to bottom only if autoscroll is NOT paused
                     if !isAutoscrollPaused && countChanged {
@@ -397,9 +404,15 @@ struct ChatView: View {
             }
             .onChange(of: shouldScrollToBottom) { _, shouldScroll in
                 if shouldScroll {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        // In inverted scroll, use .bottom anchor to scroll to the visual bottom
-                        proxy.scrollTo("bottom", anchor: .bottom)
+                    // Defer scroll to next runloop tick so LazyVStack has a
+                    // chance to lay out newly inserted items. Without this
+                    // delay, scrollTo("bottom") executes before the new
+                    // content has a measured height, causing the last item
+                    // to be partially or fully off-screen.
+                    DispatchQueue.main.async {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo("bottom", anchor: .bottom)
+                        }
                     }
                     shouldScrollToBottom = false
                     resumeAutoscroll()
@@ -479,7 +492,8 @@ struct ChatView: View {
             primaryTextColor: primaryTextColor,
             secondaryTextColor: secondaryTextColor,
             onApprove: { approvePermission() },
-            onDeny: { denyPermission() }
+            onDeny: { denyPermission() },
+            onApproveAlways: session.provider == .opencode ? { approvePermissionAlways() } : nil
         )
     }
 
@@ -630,6 +644,10 @@ struct ChatView: View {
 
     private func approvePermission() {
         sessionMonitor.approvePermission(sessionId: sessionId)
+    }
+
+    private func approvePermissionAlways() {
+        sessionMonitor.approvePermission(sessionId: sessionId, always: true)
     }
 
     private func denyPermission() {
@@ -1653,10 +1671,33 @@ struct ChatApprovalBar: View {
     let secondaryTextColor: Color
     let onApprove: () -> Void
     let onDeny: () -> Void
+    /// When non-nil, an additional "Always" button is rendered with a warning
+    /// red palette. Only OpenCode sessions wire this up — Claude/Codex leave
+    /// it nil and get the original two-button layout.
+    let onApproveAlways: (() -> Void)?
 
     @State private var showContent = false
     @State private var showAllowButton = false
     @State private var showDenyButton = false
+    @State private var showAlwaysButton = false
+
+    init(
+        tool: String,
+        toolInput: String?,
+        primaryTextColor: Color,
+        secondaryTextColor: Color,
+        onApprove: @escaping () -> Void,
+        onDeny: @escaping () -> Void,
+        onApproveAlways: (() -> Void)? = nil
+    ) {
+        self.tool = tool
+        self.toolInput = toolInput
+        self.primaryTextColor = primaryTextColor
+        self.secondaryTextColor = secondaryTextColor
+        self.onApprove = onApprove
+        self.onDeny = onDeny
+        self.onApproveAlways = onApproveAlways
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1677,19 +1718,20 @@ struct ChatApprovalBar: View {
 
             Spacer()
 
-            // Deny button
+            // Deny button — matches InlineApprovalButtons styling
             Button {
                 onDeny()
             } label: {
                 Text("Deny")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(primaryTextColor.opacity(0.78))
+                    .foregroundColor(.white.opacity(0.6))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
-                    .background(secondaryTextColor.opacity(0.16))
+                    .background(Color.white.opacity(0.1))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
             .opacity(showDenyButton ? 1 : 0)
             .scaleEffect(showDenyButton ? 1 : 0.8)
 
@@ -1702,12 +1744,33 @@ struct ChatApprovalBar: View {
                     .foregroundColor(Color.black.opacity(0.88))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
-                    .background(primaryTextColor.opacity(0.92))
+                    .background(Color.white.opacity(0.92))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
             .opacity(showAllowButton ? 1 : 0)
             .scaleEffect(showAllowButton ? 1 : 0.8)
+
+            // Always button — only when onApproveAlways is provided.
+            // Red text on the normal Allow-style background.
+            if let onApproveAlways {
+                Button {
+                    onApproveAlways()
+                } label: {
+                    Text("Always")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color(red: 0.92, green: 0.30, blue: 0.25))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.92))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
+                .opacity(showAlwaysButton ? 1 : 0)
+                .scaleEffect(showAlwaysButton ? 1 : 0.8)
+            }
         }
         .frame(minHeight: 44)  // Consistent height with other bars
         .padding(.horizontal, 16)
@@ -1721,6 +1784,11 @@ struct ChatApprovalBar: View {
             }
             withAnimation(.spring(response: 0.35, dampingFraction: 0.7).delay(0.15)) {
                 showAllowButton = true
+            }
+            if onApproveAlways != nil {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.7).delay(0.2)) {
+                    showAlwaysButton = true
+                }
             }
         }
     }
