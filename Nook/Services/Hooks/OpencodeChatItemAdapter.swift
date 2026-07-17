@@ -110,6 +110,7 @@ final class OpencodeChatItemAdapter: @unchecked Sendable {
              .preTool, .postTool, .image:
             return true
         case .sessionStart, .processingStarted, .waitingForUserInput, .stop,
+             .permissionAsked,
              .subagentStarted, .subagentToolExecuted, .subagentToolCompleted, .subagentStopped:
             return false
         }
@@ -228,6 +229,7 @@ final class OpencodeChatItemAdapter: @unchecked Sendable {
             )]
 
         case .sessionStart, .processingStarted, .waitingForUserInput, .stop,
+             .permissionAsked,
              .subagentStarted, .subagentToolExecuted, .subagentToolCompleted, .subagentStopped:
             return []
         }

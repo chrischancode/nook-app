@@ -150,6 +150,13 @@ actor SessionStore {
         case .opencodeStopped(let sessionId, let cwd):
             processOpencodeStop(sessionId: sessionId, cwd: cwd)
 
+        case .opencodePermissionRequested(let sessionId, let cwd, let permission, let requestId, let toolUseId, let input, let inputSummary):
+            processOpencodePermissionRequested(
+                sessionId: sessionId, cwd: cwd, permission: permission,
+                requestId: requestId, toolUseId: toolUseId,
+                input: input, inputSummary: inputSummary
+            )
+
         case .cursorSessionStarted(let sessionId, let cwd):
             processCursorSessionStart(sessionId: sessionId, cwd: cwd)
 
@@ -842,8 +849,20 @@ actor SessionStore {
         // Idempotent: if already processing, phase.canTransition allows it
         // (processing → processing is a no-op). Covers both thinking and
         // tool-running phases; the first call wins.
+        //
+        // opencode fires `message.part.updated(running)` immediately after
+        // `permission.asked`, which surfaces here as a processingStarted.
+        // Without this guard, the processingStarted would overwrite the
+        // .waitingForApproval phase that permissionAsked just set, hiding the
+        // approval buttons before the user can click them.
         DebugLog.shared.write("[opencode-phase] processingStarted session=\(sessionId.prefix(8)) currentPhase=\(session.phase)")
-        if session.phase.canTransition(to: .processing) {
+        if case .waitingForApproval = session.phase {
+            // keep waitingForApproval — tool is awaiting user permission
+            DebugLog.shared.write("[opencode-phase] processingStarted → suppressed (waitingForApproval)")
+        } else if case .waitingForTerminalApproval = session.phase {
+            // keep waitingForTerminalApproval — terminal permission pending
+            DebugLog.shared.write("[opencode-phase] processingStarted → suppressed (waitingForTerminalApproval)")
+        } else if session.phase.canTransition(to: .processing) {
             session.phase = .processing
             DebugLog.shared.write("[opencode-phase] processingStarted → phase set to .processing")
         } else {
@@ -879,7 +898,9 @@ actor SessionStore {
         enrichOpencodeRuntimeMetadata(session: &session)
         session.lastActivity = Date()
         session.phase = .idle
-        session.completionNotificationAt = hadRunningTools ? nil : Date()
+        // Don't set completionNotificationAt here — we use publishCompletionNotification
+        // below for direct notification, avoiding double-trigger with
+        // handleWaitingForInputChange's completionMarker detection.
 
         for index in session.chatItems.indices {
             if case .toolCall(var tool) = session.chatItems[index].type, tool.status == .running {
@@ -895,6 +916,73 @@ actor SessionStore {
         session.toolTracker.inProgress.removeAll()
         sessions[sessionId] = session
         publishState()
+
+        // Publish completion notification when the session ends without
+        // running tools (normal turn completion). This triggers the
+        // notification sound and bounce in NotchView.
+        // NOTE: We use publishCompletionNotification (direct) instead of
+        // completionNotificationAt (detected via handleWaitingForInputChange)
+        // to avoid double-triggering the sound.
+        if !hadRunningTools {
+            publishCompletionNotification(for: session)
+        }
+    }
+
+    private func processOpencodePermissionRequested(
+        sessionId: String,
+        cwd: String,
+        permission: String,
+        requestId: String,
+        toolUseId: String?,
+        input: [String: String],
+        inputSummary: String?
+    ) {
+        var session = sessions[sessionId] ?? createOpencodeSession(sessionId: sessionId, cwd: cwd)
+        enrichOpencodeRuntimeMetadata(session: &session)
+        session.lastActivity = Date()
+        session.completionNotificationAt = nil
+
+        let toolInput = input.mapValues { AnyCodable($0) }
+        let context = PermissionContext(
+            toolUseId: toolUseId ?? "",
+            toolName: permission,
+            toolInput: toolInput.isEmpty ? nil : toolInput,
+            receivedAt: Date(),
+            opencodeRequestId: requestId
+        )
+        // opencode permission prompts use the in-process approval path
+        // (Nook → plugin socket → client.permissionReply). The phase must be
+        // .waitingForApproval (not .waitingForTerminalApproval) so the UI
+        // renders the Allow/Deny/Always buttons that can reply to it.
+        let targetPhase = SessionPhase.waitingForApproval(context)
+        if session.phase.canTransition(to: targetPhase) {
+            session.phase = targetPhase
+        }
+
+        if let toolUseId, !toolUseId.isEmpty {
+            updateToolStatus(in: &session, toolId: toolUseId, status: .waitingForApproval)
+        }
+
+        let trimmedSummary = inputSummary?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nonEmptySummary: String? = {
+            guard let trimmedSummary, !trimmedSummary.isEmpty else { return nil }
+            return trimmedSummary
+        }()
+        session.conversationInfo = ConversationInfo(
+            summary: session.conversationInfo.summary,
+            lastMessage: nonEmptySummary ?? session.conversationInfo.lastMessage,
+            lastMessageRole: "tool",
+            lastToolName: permission,
+            firstUserMessage: session.conversationInfo.firstUserMessage,
+            lastUserMessageDate: session.conversationInfo.lastUserMessageDate,
+            usage: session.conversationInfo.usage
+        )
+        sessions[sessionId] = session
+        // Publish a completion notification so the notch plays the alert
+        // sound and bounces — permission prompts are actionable events
+        // that need the user's attention just like a finished response.
+        publishCompletionNotification(for: session)
+        writeDebugLogAsync("[opencode-permission] permissionAsked session=\(sessionId.prefix(8)) tool=\(permission) requestId=\(requestId.prefix(12)) toolUseId=\(toolUseId ?? "nil") phase=\(String(describing: session.phase))")
     }
 
     // MARK: - Cursor Session Processing
@@ -1030,7 +1118,11 @@ actor SessionStore {
 
         switch update.block {
         case .userPrompt(let text):
-            session.phase = .processing
+            // Don't overwrite waitingForApproval: user shouldn't be submitting
+            // prompts while a permission is pending, but guard defensively.
+            if !session.phase.isWaitingForApproval && !session.phase.isWaitingForTerminalApproval {
+                session.phase = .processing
+            }
             session.completionNotificationAt = nil
             session.conversationInfo = ConversationInfo(
                 summary: session.conversationInfo.summary,
@@ -1052,7 +1144,9 @@ actor SessionStore {
             // tool-end idle gap). For all other providers, the existing
             // hasRunningTools heuristic is fine.
             if session.provider == .opencode {
-                session.phase = .processing
+                if !session.phase.isWaitingForApproval && !session.phase.isWaitingForTerminalApproval {
+                    session.phase = .processing
+                }
             } else {
                 session.phase = hasRunningTools(in: session) ? .processing : .idle
             }
@@ -1078,14 +1172,23 @@ actor SessionStore {
             if update.mutation == .insert {
                 session.toolTracker.startTool(id: update.id, name: tc.name)
                 session.completionNotificationAt = nil
-                session.phase = .processing
+                // Don't overwrite waitingForApproval/waitingForTerminalApproval:
+                // opencode fires message.part.updated(running) immediately after
+                // permission.asked, which surfaces here as a toolCall insert.
+                // Without this guard the phase would flip back to .processing
+                // and the user would never see the approval buttons.
+                if !session.phase.isWaitingForApproval && !session.phase.isWaitingForTerminalApproval {
+                    session.phase = .processing
+                }
             } else {
                 session.toolTracker.completeTool(id: update.id, success: !update.isError)
                 // Same opencode carve-out as assistantText above: between
                 // tool calls the session is still alive, so keep .processing
                 // until the explicit .stop event.
                 if session.provider == .opencode {
-                    session.phase = .processing
+                    if !session.phase.isWaitingForApproval && !session.phase.isWaitingForTerminalApproval {
+                        session.phase = .processing
+                    }
                 } else {
                     session.phase = hasRunningTools(in: session) ? .processing : .idle
                 }

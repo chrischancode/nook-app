@@ -255,6 +255,8 @@ final class OpencodeHookAdapter: @unchecked Sendable {
             return handleSessionIdle(props)
         case "question.asked":
             return handleQuestionAsked(props)
+        case "permission.asked":
+            return handlePermissionAsked(props)
         case "message.updated":
             return handleMessageUpdated(props)
         case "message.part.updated":
@@ -550,6 +552,65 @@ final class OpencodeHookAdapter: @unchecked Sendable {
         }
         Self.logNotice("→ waitingForUserInput (question.asked) session=\(sessionId) cwd=\(cwd)")
         return [.waitingForUserInput(sessionId: sessionId, cwd: cwd)]
+    }
+
+    /// Handle opencode's `permission.asked` event. opencode fires this when a
+    /// tool requires user approval (e.g. bash command, file edit). The payload
+    /// carries a permission request id (e.g. "per_xxx") which Nook uses to
+    /// reply via /tmp/nook-command.sock. Unlike Claude/Codex where Nook answers
+    /// through the hook socket, opencode requires an explicit in-process reply
+    /// via the plugin's command socket.
+    ///
+    /// Payload shape (opencode/src/permission/index.ts):
+    ///   {
+    ///     "sessionID": "...",
+    ///     "id": "per_xxx",        // permission request id
+    ///     "tool": { "callID": "..." },   // optional, ties to message part
+    ///     "permission": "bash",    // tool name
+    ///     "patterns": [...],
+    ///     "metadata": { "filepath": "...", "diff": "...", "url": "..." }
+    ///   }
+    private static func handlePermissionAsked(_ props: [String: AnyCodable]) -> [OpencodeSessionEvent] {
+        guard let sessionId = props["sessionID"]?.value as? String else { return [] }
+        let cwd: String = {
+            lock.lock()
+            let v = sessionCwd[sessionId] ?? ""
+            lock.unlock()
+            return v
+        }()
+        guard let requestId = props["id"]?.value as? String, !requestId.isEmpty else {
+            Self.logNotice("→ permissionAsked dropped (no id) session=\(sessionId)")
+            return []
+        }
+        let tool = props["tool"]?.value as? [String: Any]
+        let callId = tool?["callID"] as? String
+        let permission = (props["permission"]?.value as? String) ?? "tool"
+        let patterns: [String] = {
+            guard let arr = props["patterns"]?.value as? [Any] else { return [] }
+            return arr.compactMap { $0 as? String }
+        }()
+        let metadata = props["metadata"]?.value as? [String: Any] ?? [:]
+
+        // Build the input map mirroring handleToolPart's stringifyInput so
+        // downstream consumers (ChatItemToolCall.input, MCPToolFormatter) can
+        // render the same details as a preTool event.
+        var inputMap: [String: String] = [:]
+        if let cmd = metadata["command"] as? String { inputMap["command"] = cmd }
+        if let filePath = metadata["filepath"] as? String ?? metadata["file_path"] as? String {
+            inputMap["file_path"] = filePath
+        }
+        if let diff = metadata["diff"] as? String { inputMap["diff"] = diff }
+        if let url = metadata["url"] as? String { inputMap["url"] = url }
+        if !patterns.isEmpty { inputMap["patterns"] = patterns.joined(separator: ", ") }
+
+        let inputSummary = buildInputSummary(toolName: permission, input: metadata)
+
+        Self.logNotice("→ permissionAsked session=\(sessionId) requestId=\(requestId) tool=\(permission) callID=\(callId ?? "-") summary=\(inputSummary)")
+        return [.permissionAsked(
+            sessionId: sessionId, cwd: cwd, requestId: requestId,
+            toolName: permission, toolUseId: callId,
+            input: inputMap, inputSummary: inputSummary
+        )]
     }
 
     // MARK: - Message Handlers
@@ -1293,6 +1354,7 @@ final class OpencodeHookAdapter: @unchecked Sendable {
             return events
         }
         Self.logNotice("→ assistantText session=\(sessionId) messageID=\(messageId) textChars=\(text.count) trigger=\(trigger)")
+        Self.logNotice("→ assistantText preview session=\(sessionId) messageID=\(messageId) first20=\"\(text.prefix(20))\" last20=\"\(text.suffix(20))\"")
         events.append(.assistantText(sessionId: sessionId, cwd: cwd, text: text, messageId: messageId))
         return events
     }

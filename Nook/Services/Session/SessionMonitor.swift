@@ -102,6 +102,8 @@ class SessionMonitor: ObservableObject {
                     case .stop(let sessionId, let cwd):
                         OpencodeChatItemAdapter.shared.clearSession(sessionId)
                         await SessionStore.shared.process(.opencodeStopped(sessionId: sessionId, cwd: cwd))
+                    case .permissionAsked(let sessionId, let cwd, let requestId, let toolName, let toolUseId, let input, let inputSummary):
+                        await SessionStore.shared.process(.opencodePermissionRequested(sessionId: sessionId, cwd: cwd, permission: toolName, requestId: requestId, toolUseId: toolUseId, input: input, inputSummary: inputSummary))
                     case .subagentStarted(let sessionId, let taskToolId):
                         // sessionId is already the parent's — the adapter
                         // rewrites child session ids before emitting.
@@ -194,6 +196,22 @@ class SessionMonitor: ObservableObject {
                 return
             }
 
+            // OpenCode permission prompts are replied to via the plugin's
+            // command socket (per_xxx id), not the Claude hook socket. When
+            // the active permission carries an opencodeRequestId, route the
+            // approval there and skip the Claude/Codex hook response.
+            if let requestId = permission.opencodeRequestId {
+                OpencodeCommandSocket.shared.sendCommand([
+                    "cmd": "permission.reply",
+                    "requestId": requestId,
+                    "reply": "once",
+                ])
+                await SessionStore.shared.process(
+                    .permissionApproved(sessionId: sessionId, toolUseId: permission.toolUseId)
+                )
+                return
+            }
+
             HookSocketServer.shared.respondToPermission(
                 toolUseId: permission.toolUseId,
                 decision: "allow"
@@ -205,10 +223,55 @@ class SessionMonitor: ObservableObject {
         }
     }
 
+    /// Approve a permission prompt with the option to remember the decision
+    /// for the rest of the session. Only meaningful for OpenCode sessions —
+    /// Claude/Codex fall back to the single-shot approvePermission path.
+    func approvePermission(sessionId: String, always: Bool) {
+        Task {
+            guard let session = await SessionStore.shared.session(for: sessionId),
+                  let permission = session.activePermission else {
+                return
+            }
+
+            // OpenCode path: send the reply through the command socket with
+            // "once" or "always". If there's no opencodeRequestId (Claude/Codex
+            // session), fall back to the standard single-shot path.
+            guard let requestId = permission.opencodeRequestId else {
+                if !always {
+                    approvePermission(sessionId: sessionId)
+                }
+                return
+            }
+
+            OpencodeCommandSocket.shared.sendCommand([
+                "cmd": "permission.reply",
+                "requestId": requestId,
+                "reply": always ? "always" : "once",
+            ])
+
+            await SessionStore.shared.process(
+                .permissionApproved(sessionId: sessionId, toolUseId: permission.toolUseId)
+            )
+        }
+    }
+
     func denyPermission(sessionId: String, reason: String?) {
         Task {
             guard let session = await SessionStore.shared.session(for: sessionId),
                   let permission = session.activePermission else {
+                return
+            }
+
+            // OpenCode deny path — reply "reject" through the command socket.
+            if let requestId = permission.opencodeRequestId {
+                OpencodeCommandSocket.shared.sendCommand([
+                    "cmd": "permission.reply",
+                    "requestId": requestId,
+                    "reply": "reject",
+                ])
+                await SessionStore.shared.process(
+                    .permissionDenied(sessionId: sessionId, toolUseId: permission.toolUseId, reason: reason)
+                )
                 return
             }
 

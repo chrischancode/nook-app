@@ -14,10 +14,52 @@ struct PermissionContext: Sendable {
     let toolName: String
     let toolInput: [String: AnyCodable]?
     let receivedAt: Date
+    /// OpenCode permission request id (e.g. "per_xxx"). nil for Claude/Codex
+    /// sessions where approval is delivered through the hook socket.
+    let opencodeRequestId: String?
+
+    init(
+        toolUseId: String,
+        toolName: String,
+        toolInput: [String: AnyCodable]?,
+        receivedAt: Date,
+        opencodeRequestId: String? = nil
+    ) {
+        self.toolUseId = toolUseId
+        self.toolName = toolName
+        self.toolInput = toolInput
+        self.receivedAt = receivedAt
+        self.opencodeRequestId = opencodeRequestId
+    }
 
     /// Format tool input for display
+    /// Shortens a path by replacing the user's home directory with "~".
+    private static func abbreviatePath(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if path.hasPrefix(home) {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
+    }
+
     var formattedInput: String? {
         guard let input = toolInput else { return nil }
+
+        // opencode permission prompts use different field names than Claude
+        // tool inputs. `external_directory` permission carries `filepath`
+        // (one word) instead of `file_path`, and `permission` is a category
+        // name ("read", "edit", "external_directory") rather than a tool
+        // name. Handle these first so the permission row shows the actual
+        // target (file path, command) instead of the opaque category.
+        let lowerTool = toolName.lowercased()
+        if lowerTool == "external_directory" {
+            // opencode external-directory permission: show the file path
+            // that triggered the external-directory check.
+            if let filepath = input["filepath"]?.value as? String {
+                let short = Self.abbreviatePath(filepath)
+                return short.count > 100 ? String(short.prefix(100)) + "..." : short
+            }
+        }
 
         // Switch on provider-agnostic kind — opencode emits lowercase
         // tool names ("bash", "read", "edit", "write") while Claude
@@ -32,28 +74,34 @@ struct PermissionContext: Sendable {
             }
         case .write, .edit:
             if let path = input["file_path"]?.value as? String {
-                return URL(fileURLWithPath: path).lastPathComponent
+                let short = Self.abbreviatePath(path)
+                return URL(fileURLWithPath: short).lastPathComponent
             }
         case .read:
             if let path = input["file_path"]?.value as? String {
-                return URL(fileURLWithPath: path).lastPathComponent
+                let short = Self.abbreviatePath(path)
+                return URL(fileURLWithPath: short).lastPathComponent
             }
         default:
             break
         }
 
-        // Default: show first string value found (skip description)
-        let priorityKeys = ["command", "file_path", "path", "query", "pattern", "url"]
+        // Default: show first string value found (skip description).
+        // Includes `filepath` (opencode permission metadata) alongside
+        // the standard Claude-style keys.
+        let priorityKeys = ["command", "file_path", "filepath", "path", "query", "pattern", "url"]
         for key in priorityKeys {
             if let value = input[key]?.value as? String {
-                return value.count > 100 ? String(value.prefix(100)) + "..." : value
+                let short = Self.abbreviatePath(value)
+                return short.count > 100 ? String(short.prefix(100)) + "..." : short
             }
         }
 
         // Fallback: first non-description string
         for (key, value) in input where key != "description" {
             if let str = value.value as? String {
-                return str.count > 100 ? String(str.prefix(100)) + "..." : str
+                let short = Self.abbreviatePath(str)
+                return short.count > 100 ? String(short.prefix(100)) + "..." : short
             }
         }
 
@@ -66,7 +114,8 @@ extension PermissionContext: Equatable {
         // Compare by identity fields only (AnyCodable doesn't conform to Equatable)
         lhs.toolUseId == rhs.toolUseId &&
         lhs.toolName == rhs.toolName &&
-        lhs.receivedAt == rhs.receivedAt
+        lhs.receivedAt == rhs.receivedAt &&
+        lhs.opencodeRequestId == rhs.opencodeRequestId
     }
 }
 

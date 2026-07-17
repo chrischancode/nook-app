@@ -62,6 +62,11 @@ enum SessionEvent: Sendable {
     /// OpenCode stopped the current turn
     case opencodeStopped(sessionId: String, cwd: String)
 
+    /// OpenCode is asking for user permission to run a tool. Unlike Claude/Codex
+    /// where approval is sent back through the hook socket, OpenCode requires a
+    /// reply via the plugin's command socket using the `requestId` carried here.
+    case opencodePermissionRequested(sessionId: String, cwd: String, permission: String, requestId: String, toolUseId: String?, input: [String: String], inputSummary: String?)
+
     /// Cursor composer conversation was created or resumed
     case cursorSessionStarted(sessionId: String, cwd: String)
 
@@ -295,6 +300,8 @@ extension SessionEvent: CustomStringConvertible {
             return "opencodeWaitingForUserInput(session: \(sessionId.prefix(8)))"
         case .opencodeStopped(let sessionId, _):
             return "opencodeStopped(session: \(sessionId.prefix(8)))"
+        case .opencodePermissionRequested(let sessionId, _, let permission, let requestId, _, _, _):
+            return "opencodePermissionRequested(session: \(sessionId.prefix(8)), permission: \(permission), requestId: \(requestId.prefix(12)))"
         case .cursorSessionStarted(let sessionId, _):
             return "cursorSessionStarted(session: \(sessionId.prefix(8)))"
         case .cursorProcessingStarted(let sessionId, _):
