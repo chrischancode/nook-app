@@ -2283,6 +2283,24 @@ actor SessionStore {
                     ? codexRunningToolQuietExpirationSeconds
                     : codexActiveQuietExpirationSeconds
 
+                // Check transcript for terminal error (e.g. 429 Too Many Requests)
+                // before falling through to quiet expiration. Codex Desktop does not
+                // fire a Stop hook when the API retry limit is exceeded, so the
+                // session would otherwise remain stuck in .processing for 90+ seconds.
+                if let errorMessage = CodexTranscriptParser.detectTerminalError(sessionId: sessionId) {
+                    Self.logger.info("Codex session \(sessionId.prefix(8), privacy: .public) terminated with error: \(errorMessage, privacy: .public)")
+                    writeDebugLogAsync("[codex-lifecycle] terminalErrorDetected session=\(sessionId) error=\(errorMessage) phase=\(String(describing: session.phase))")
+                    markCodexSessionStopped(sessionId: sessionId)
+                    var updatedSession = session
+                    updatedSession.phase = .idle
+                    updatedSession.completionNotificationAt = nil
+                    finishDanglingCodexTools(in: &updatedSession)
+                    updatedSession.toolTracker.inProgress.removeAll()
+                    sessions[sessionId] = updatedSession
+                    stateChanged = true
+                    continue
+                }
+
                 if quietDuration > quietLimit {
                     var updatedSession = session
                     Self.logger.info("Codex session \(sessionId.prefix(8), privacy: .public) active state expired after \(Int(quietDuration), privacy: .public)s quiet; marking idle")

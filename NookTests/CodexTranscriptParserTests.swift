@@ -2,6 +2,53 @@ import XCTest
 @testable import Nook
 
 final class CodexTranscriptParserTests: XCTestCase {
+    func testDetectTerminalErrorReturnsMessageFor429() throws {
+        let sessionId = "test-session-\(UUID().uuidString.prefix(8))"
+        let testDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/sessions/t-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: testDir) }
+
+        let url = testDir.appendingPathComponent("rollout-\(sessionId).jsonl")
+        let errorContent = """
+        {"timestamp":"2026-07-30T02:51:57.863Z","type":"event_msg","payload":{"type":"task_complete","error":{"message":"exceeded retry limit, last status: 429 Too Many Requests"}}}
+        """
+        try errorContent.write(to: url, atomically: true, encoding: .utf8)
+
+        let error = CodexTranscriptParser.detectTerminalError(sessionId: sessionId)
+        XCTAssertEqual(error, "exceeded retry limit, last status: 429 Too Many Requests")
+    }
+
+    func testDetectTerminalErrorReturnsNilWhenNoError() throws {
+        let sessionId = "test-session-\(UUID().uuidString.prefix(8))"
+        let testDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/sessions/t-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: testDir) }
+
+        let url = testDir.appendingPathComponent("rollout-\(sessionId).jsonl")
+        let normalContent = """
+        {"timestamp":"2026-07-30T02:51:57.863Z","type":"event_msg","payload":{"type":"task_complete","last_agent_message":"done"}}
+        """
+        try normalContent.write(to: url, atomically: true, encoding: .utf8)
+
+        let error = CodexTranscriptParser.detectTerminalError(sessionId: sessionId)
+        XCTAssertNil(error)
+    }
+
+    func testDetectTerminalErrorReturnsNilForEmptyTranscript() throws {
+        let sessionId = "test-session-\(UUID().uuidString.prefix(8))"
+        let testDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/sessions/t-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: testDir) }
+
+        let url = testDir.appendingPathComponent("rollout-\(sessionId).jsonl")
+        try "".write(to: url, atomically: true, encoding: .utf8)
+
+        let error = CodexTranscriptParser.detectTerminalError(sessionId: sessionId)
+        XCTAssertNil(error)
+    }
     func testLowerBoundSkipsOldAndInvalidTimestampRows() throws {
         let lowerBound = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-06-21T00:00:00Z"))
         let url = try writeTemporaryJSONL(
