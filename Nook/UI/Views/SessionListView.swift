@@ -371,6 +371,7 @@ struct InstanceRow: View {
 
     @State private var isHovered = false
     @State private var isYabaiAvailable = false
+    @State private var isConfirmingAlways = false
 
     private var providerTint: Color {
         SessionLoadingStyle.tint(for: session.provider)
@@ -452,78 +453,90 @@ struct InstanceRow: View {
 
             // Text content
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(session.displayTitle)
+                if isConfirmingAlways {
+                    // Confirm mode: show "Patterns" label + allowed patterns
+                    Text("Patterns")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white)
                         .lineLimit(1)
-
-                    Text(session.provider.displayName)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(providerLabelForeground)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(providerLabelBackground)
-                        .clipShape(Capsule())
-
-                    // Token usage indicator
-                    if session.usage.totalTokens > 0 {
-                        Text(session.usage.formattedTotal)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.3))
-                    }
-                }
-
-                // Show tool call when waiting for approval/input, otherwise last activity
-                if (isWaitingForApproval || isWaitingForTerminalApproval || isWaitingForUserInput),
-                   let toolName = session.pendingToolName {
-                    // Tool name (amber, fixed) + marquee input (scrolls when long).
-                    // Both use the same system font (no monospaced) so their
-                    // baselines align naturally in the HStack.
+                    let patterns = session.activePermission?.alwaysPatterns ?? []
+                    let text = patterns.count == 1 && patterns[0] == "*"
+                        ? "Allow all until restart"
+                        : patterns.joined(separator: ", ")
+                    MarqueeText(text: text, font: .system(size: 10), color: .white.opacity(0.5))
+                        .frame(maxWidth: 200, alignment: .leading)
+                } else {
                     HStack(spacing: 6) {
-                        Text(MCPToolFormatter.formatToolName(toolName))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(TerminalColors.amber.opacity(0.9))
-                            .fixedSize(horizontal: true, vertical: false)
-                        if isInteractiveTool {
-                            Text("Needs your input")
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.5))
-                                .lineLimit(1)
-                        } else if let input = session.pendingToolInput {
-                            // Marquee scrolls the input horizontally when it
-                            // overflows, so long file paths stay readable.
-                            MarqueeText(
-                                text: input,
-                                font: .system(size: 11),
-                                color: .white.opacity(0.5)
-                            )
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(session.displayTitle)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+
+                        Text(session.provider.displayName)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(providerLabelForeground)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(providerLabelBackground)
+                            .clipShape(Capsule())
+
+                        if session.usage.totalTokens > 0 {
+                            Text(session.usage.formattedTotal)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.3))
                         }
                     }
-                } else if let role = session.lastMessageRole {
-                    switch role {
-                    case "tool":
-                        // Tool call - show tool name + input
-                        HStack(spacing: 4) {
-                            if let toolName = session.lastToolName {
-                                Text(MCPToolFormatter.formatToolName(toolName))
-                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.5))
-                            }
-                            if let input = session.lastMessage {
-                                Text(input)
+
+                    if (isWaitingForApproval || isWaitingForTerminalApproval || isWaitingForUserInput),
+                       let toolName = session.pendingToolName {
+                        HStack(spacing: 6) {
+                            Text(MCPToolFormatter.formatToolName(toolName))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(TerminalColors.amber.opacity(0.9))
+                                .fixedSize(horizontal: true, vertical: false)
+                            if isInteractiveTool {
+                                Text("Needs your input")
                                     .font(.system(size: 11))
-                                    .foregroundColor(.white.opacity(0.4))
+                                    .foregroundColor(.white.opacity(0.5))
                                     .lineLimit(1)
+                            } else if let input = session.pendingToolInput {
+                                MarqueeText(
+                                    text: input,
+                                    font: .system(size: 11),
+                                    color: .white.opacity(0.5)
+                                )
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
-                    case "user":
-                        // User message - prefix with "You:"
-                        HStack(spacing: 4) {
-                            Text("You:")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.white.opacity(0.5))
+                    } else if let role = session.lastMessageRole {
+                        switch role {
+                        case "tool":
+                            HStack(spacing: 4) {
+                                if let toolName = session.lastToolName {
+                                    Text(MCPToolFormatter.formatToolName(toolName))
+                                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                        .foregroundColor(.white.opacity(0.5))
+                                }
+                                if let input = session.lastMessage {
+                                    Text(input)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.white.opacity(0.4))
+                                        .lineLimit(1)
+                                }
+                            }
+                        case "user":
+                            HStack(spacing: 4) {
+                                Text("You:")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.5))
+                                if let msg = session.lastMessage {
+                                    Text(msg)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.white.opacity(0.4))
+                                        .lineLimit(1)
+                                }
+                            }
+                        default:
                             if let msg = session.lastMessage {
                                 Text(msg)
                                     .font(.system(size: 11))
@@ -531,26 +544,17 @@ struct InstanceRow: View {
                                     .lineLimit(1)
                             }
                         }
-                    default:
-                        // Assistant message - just show text
-                        if let msg = session.lastMessage {
-                            Text(msg)
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.4))
-                                .lineLimit(1)
-                        }
+                    } else if let lastMsg = session.lastMessage {
+                        Text(lastMsg)
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.4))
+                            .lineLimit(1)
+                    } else {
+                        Text(phaseStatusText)
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.4))
+                            .lineLimit(1)
                     }
-                } else if let lastMsg = session.lastMessage {
-                    Text(lastMsg)
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.4))
-                        .lineLimit(1)
-                } else {
-                    // Fallback: show phase-based status when no other content
-                    Text(phaseStatusText)
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.4))
-                        .lineLimit(1)
                 }
             }
 
@@ -579,7 +583,7 @@ struct InstanceRow: View {
                     onApprove: onApprove,
                     onReject: onReject,
                     onApproveAlways: onApproveAlways,
-                    alwaysPatterns: session.activePermission?.alwaysPatterns ?? []
+                    isConfirmingAlways: $isConfirmingAlways
                 )
                 .layoutPriority(1)
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
@@ -660,66 +664,109 @@ struct InlineApprovalButtons: View {
     let onApprove: () -> Void
     let onReject: () -> Void
     let onApproveAlways: (() -> Void)?
-    let alwaysPatterns: [String]
+    @Binding var isConfirmingAlways: Bool
 
     @State private var showChatButton = false
     @State private var showDenyButton = false
     @State private var showAllowButton = false
     @State private var showAlwaysButton = false
-    @State private var isConfirmingAlways = false
 
     init(
         onChat: @escaping () -> Void,
         onApprove: @escaping () -> Void,
         onReject: @escaping () -> Void,
         onApproveAlways: (() -> Void)? = nil,
-        alwaysPatterns: [String] = []
+        isConfirmingAlways: Binding<Bool> = .constant(false)
     ) {
         self.onChat = onChat
         self.onApprove = onApprove
         self.onReject = onReject
         self.onApproveAlways = onApproveAlways
-        self.alwaysPatterns = alwaysPatterns
+        self._isConfirmingAlways = isConfirmingAlways
     }
 
     var body: some View {
-        VStack(spacing: 4) {
-            // Patterns marquee (only in confirm mode)
+        // Button row only — patterns info is displayed by the parent (InstanceRow)
+        HStack(spacing: 6) {
             if isConfirmingAlways {
-                let text = alwaysPatterns.count == 1 && alwaysPatterns[0] == "*"
-                    ? "Allow all until restart"
-                    : alwaysPatterns.joined(separator: ", ")
-                MarqueeText(text: text, font: .system(size: 9), color: .white.opacity(0.4))
-                    .frame(maxWidth: 140)
-            }
+                IconButton(icon: "bubble.left") {
+                    onChat()
+                }
 
-            // Button row
-            HStack(spacing: 6) {
-                if isConfirmingAlways {
-                    IconButton(icon: "bubble.left") {
-                        onChat()
-                    }
+                Button {
+                    isConfirmingAlways = false
+                } label: {
+                    Text("Cancel")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
 
+                Button {
+                    DebugLog.shared.write("[notch] Confirm tapped")
+                    isConfirmingAlways = false
+                    onApproveAlways?()
+                } label: {
+                    Text("Confirm")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(Color(red: 0.92, green: 0.30, blue: 0.25))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.9))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
+            } else {
+                IconButton(icon: "bubble.left") {
+                    onChat()
+                }
+                .opacity(showChatButton ? 1 : 0)
+                .scaleEffect(showChatButton ? 1 : 0.8)
+
+                Button {
+                    onReject()
+                } label: {
+                    Text("Deny")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
+                .opacity(showDenyButton ? 1 : 0)
+                .scaleEffect(showDenyButton ? 1 : 0.8)
+
+                Button {
+                    onApprove()
+                } label: {
+                    Text("Allow")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.9))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
+                .opacity(showAllowButton ? 1 : 0)
+                .scaleEffect(showAllowButton ? 1 : 0.8)
+
+                if onApproveAlways != nil {
                     Button {
-                        isConfirmingAlways = false
+                        DebugLog.shared.write("[notch] Always tapped")
+                        isConfirmingAlways = true
                     } label: {
-                        Text("Cancel")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.white.opacity(0.6))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .fixedSize(horizontal: true, vertical: false)
-
-                    Button {
-                        DebugLog.shared.write("[notch] Confirm tapped")
-                        isConfirmingAlways = false
-                        onApproveAlways?()
-                    } label: {
-                        Text("Confirm")
+                        Text("Always")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(Color(red: 0.92, green: 0.30, blue: 0.25))
                             .padding(.horizontal, 10)
@@ -729,63 +776,8 @@ struct InlineApprovalButtons: View {
                     }
                     .buttonStyle(.plain)
                     .fixedSize(horizontal: true, vertical: false)
-                } else {
-                    IconButton(icon: "bubble.left") {
-                        onChat()
-                    }
-                    .opacity(showChatButton ? 1 : 0)
-                    .scaleEffect(showChatButton ? 1 : 0.8)
-
-                    Button {
-                        onReject()
-                    } label: {
-                        Text("Deny")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.white.opacity(0.6))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .opacity(showDenyButton ? 1 : 0)
-                    .scaleEffect(showDenyButton ? 1 : 0.8)
-
-                    Button {
-                        onApprove()
-                    } label: {
-                        Text("Allow")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.black)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.white.opacity(0.9))
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .opacity(showAllowButton ? 1 : 0)
-                    .scaleEffect(showAllowButton ? 1 : 0.8)
-
-                    if onApproveAlways != nil {
-                        Button {
-                            DebugLog.shared.write("[notch] Always tapped")
-                            isConfirmingAlways = true
-                        } label: {
-                            Text("Always")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(Color(red: 0.92, green: 0.30, blue: 0.25))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Color.white.opacity(0.9))
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .opacity(showAlwaysButton ? 1 : 0)
-                        .scaleEffect(showAlwaysButton ? 1 : 0.8)
-                    }
+                    .opacity(showAlwaysButton ? 1 : 0)
+                    .scaleEffect(showAlwaysButton ? 1 : 0.8)
                 }
             }
         }
