@@ -243,6 +243,7 @@ struct SessionListView: View {
     }
 
     private func approveAlwaysSession(_ session: SessionState) {
+        DebugLog.shared.write("[notch] approveAlwaysSession sessionId=\(session.sessionId) provider=\(session.provider) activePermission=\(session.activePermission != nil)")
         sessionMonitor.approvePermission(sessionId: session.sessionId, always: true)
     }
 
@@ -577,7 +578,8 @@ struct InstanceRow: View {
                     onChat: onChat,
                     onApprove: onApprove,
                     onReject: onReject,
-                    onApproveAlways: onApproveAlways
+                    onApproveAlways: onApproveAlways,
+                    alwaysPatterns: session.activePermission?.alwaysPatterns ?? []
                 )
                 .layoutPriority(1)
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
@@ -650,93 +652,141 @@ struct InstanceRow: View {
 
 // MARK: - Inline Approval Buttons
 
-/// Compact inline approval buttons with staggered animation
+/// Compact inline approval buttons with staggered animation.
+/// When the user taps "Always", the buttons swap to Confirm / Cancel
+/// (inline, no extra text — notch space is too tight for patterns).
 struct InlineApprovalButtons: View {
     let onChat: () -> Void
     let onApprove: () -> Void
     let onReject: () -> Void
-    /// When non-nil, an additional "Always" button is shown (red warning
-    /// text) that approves the tool and remembers the decision for the
-    /// session. Only OpenCode sessions populate this today.
     let onApproveAlways: (() -> Void)?
+    let alwaysPatterns: [String]
 
     @State private var showChatButton = false
     @State private var showDenyButton = false
     @State private var showAllowButton = false
     @State private var showAlwaysButton = false
+    @State private var isConfirmingAlways = false
 
     init(
         onChat: @escaping () -> Void,
         onApprove: @escaping () -> Void,
         onReject: @escaping () -> Void,
-        onApproveAlways: (() -> Void)? = nil
+        onApproveAlways: (() -> Void)? = nil,
+        alwaysPatterns: [String] = []
     ) {
         self.onChat = onChat
         self.onApprove = onApprove
         self.onReject = onReject
         self.onApproveAlways = onApproveAlways
+        self.alwaysPatterns = alwaysPatterns
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            // Chat button
-            IconButton(icon: "bubble.left") {
-                onChat()
+        VStack(spacing: 4) {
+            // Patterns marquee (only in confirm mode)
+            if isConfirmingAlways {
+                let text = alwaysPatterns.count == 1 && alwaysPatterns[0] == "*"
+                    ? "Allow all until restart"
+                    : alwaysPatterns.joined(separator: ", ")
+                MarqueeText(text: text, font: .system(size: 9), color: .white.opacity(0.4))
+                    .frame(maxWidth: 140)
             }
-            .opacity(showChatButton ? 1 : 0)
-            .scaleEffect(showChatButton ? 1 : 0.8)
 
-            Button {
-                onReject()
-            } label: {
-                Text("Deny")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.6))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .fixedSize(horizontal: true, vertical: false)
-            .opacity(showDenyButton ? 1 : 0)
-            .scaleEffect(showDenyButton ? 1 : 0.8)
+            // Button row
+            HStack(spacing: 6) {
+                if isConfirmingAlways {
+                    IconButton(icon: "bubble.left") {
+                        onChat()
+                    }
 
-            Button {
-                onApprove()
-            } label: {
-                Text("Allow")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.9))
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .fixedSize(horizontal: true, vertical: false)
-            .opacity(showAllowButton ? 1 : 0)
-            .scaleEffect(showAllowButton ? 1 : 0.8)
+                    Button {
+                        isConfirmingAlways = false
+                    } label: {
+                        Text("Cancel")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
 
-            // Always button — only rendered when onApproveAlways is provided.
-            // Red text on the normal Allow-style background so it reads as
-            // a stronger variant of Allow rather than a danger button.
-            if let onApproveAlways {
-                Button {
-                    onApproveAlways()
-                } label: {
-                    Text("Always")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(Color(red: 0.92, green: 0.30, blue: 0.25))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.white.opacity(0.9))
-                        .clipShape(Capsule())
+                    Button {
+                        DebugLog.shared.write("[notch] Confirm tapped")
+                        isConfirmingAlways = false
+                        onApproveAlways?()
+                    } label: {
+                        Text("Confirm")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color(red: 0.92, green: 0.30, blue: 0.25))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.9))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
+                } else {
+                    IconButton(icon: "bubble.left") {
+                        onChat()
+                    }
+                    .opacity(showChatButton ? 1 : 0)
+                    .scaleEffect(showChatButton ? 1 : 0.8)
+
+                    Button {
+                        onReject()
+                    } label: {
+                        Text("Deny")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .opacity(showDenyButton ? 1 : 0)
+                    .scaleEffect(showDenyButton ? 1 : 0.8)
+
+                    Button {
+                        onApprove()
+                    } label: {
+                        Text("Allow")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.9))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .opacity(showAllowButton ? 1 : 0)
+                    .scaleEffect(showAllowButton ? 1 : 0.8)
+
+                    if onApproveAlways != nil {
+                        Button {
+                            DebugLog.shared.write("[notch] Always tapped")
+                            isConfirmingAlways = true
+                        } label: {
+                            Text("Always")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(Color(red: 0.92, green: 0.30, blue: 0.25))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.white.opacity(0.9))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .opacity(showAlwaysButton ? 1 : 0)
+                        .scaleEffect(showAlwaysButton ? 1 : 0.8)
+                    }
                 }
-                .buttonStyle(.plain)
-                .fixedSize(horizontal: true, vertical: false)
-                .opacity(showAlwaysButton ? 1 : 0)
-                .scaleEffect(showAlwaysButton ? 1 : 0.8)
             }
         }
         .onAppear {

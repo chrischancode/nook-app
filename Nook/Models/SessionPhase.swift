@@ -17,19 +17,25 @@ struct PermissionContext: Sendable {
     /// OpenCode permission request id (e.g. "per_xxx"). nil for Claude/Codex
     /// sessions where approval is delivered through the hook socket.
     let opencodeRequestId: String?
+    /// Patterns that will be allowed when the user selects "Always allow"
+    /// (e.g. ["/Users/wuruofan/mine/rfw/*"]). Populated from opencode's
+    /// `permission.asked` event. Empty for Claude/Codex sessions.
+    let alwaysPatterns: [String]
 
     init(
         toolUseId: String,
         toolName: String,
         toolInput: [String: AnyCodable]?,
         receivedAt: Date,
-        opencodeRequestId: String? = nil
+        opencodeRequestId: String? = nil,
+        alwaysPatterns: [String] = []
     ) {
         self.toolUseId = toolUseId
         self.toolName = toolName
         self.toolInput = toolInput
         self.receivedAt = receivedAt
         self.opencodeRequestId = opencodeRequestId
+        self.alwaysPatterns = alwaysPatterns
     }
 
     /// Format tool input for display

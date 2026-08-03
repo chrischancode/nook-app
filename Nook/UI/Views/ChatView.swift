@@ -493,7 +493,8 @@ struct ChatView: View {
             secondaryTextColor: secondaryTextColor,
             onApprove: { approvePermission() },
             onDeny: { denyPermission() },
-            onApproveAlways: session.provider == .opencode ? { approvePermissionAlways() } : nil
+            onApproveAlways: session.provider == .opencode ? { approvePermissionAlways() } : nil,
+            alwaysPatterns: session.activePermission?.alwaysPatterns ?? []
         )
     }
 
@@ -1663,7 +1664,10 @@ struct ChatInteractivePromptBar: View {
 
 // MARK: - Chat Approval Bar
 
-/// Approval bar for the chat view with animated buttons
+/// Approval bar for the chat view with animated buttons.
+/// Supports an inline "Always allow" confirmation: when the user taps
+/// "Always", the bar swaps to a Confirm / Cancel layout with the
+/// allowed patterns displayed, matching opencode TUI's two-step flow.
 struct ChatApprovalBar: View {
     let tool: String
     let toolInput: String?
@@ -1675,11 +1679,15 @@ struct ChatApprovalBar: View {
     /// red palette. Only OpenCode sessions wire this up — Claude/Codex leave
     /// it nil and get the original two-button layout.
     let onApproveAlways: (() -> Void)?
+    /// Patterns that will be allowed if the user confirms "Always".
+    /// Displayed inline during the confirmation step.
+    let alwaysPatterns: [String]
 
     @State private var showContent = false
     @State private var showAllowButton = false
     @State private var showDenyButton = false
     @State private var showAlwaysButton = false
+    @State private var isConfirmingAlways = false
 
     init(
         tool: String,
@@ -1688,7 +1696,8 @@ struct ChatApprovalBar: View {
         secondaryTextColor: Color,
         onApprove: @escaping () -> Void,
         onDeny: @escaping () -> Void,
-        onApproveAlways: (() -> Void)? = nil
+        onApproveAlways: (() -> Void)? = nil,
+        alwaysPatterns: [String] = []
     ) {
         self.tool = tool
         self.toolInput = toolInput
@@ -1697,79 +1706,153 @@ struct ChatApprovalBar: View {
         self.onApprove = onApprove
         self.onDeny = onDeny
         self.onApproveAlways = onApproveAlways
+        self.alwaysPatterns = alwaysPatterns
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Tool info
-            VStack(alignment: .leading, spacing: 2) {
-                Text(MCPToolFormatter.formatToolName(tool))
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundColor(TerminalColors.amber)
-                if let input = toolInput {
-                    Text(input)
+        VStack(spacing: 6) {
+            if isConfirmingAlways {
+                // Patterns info line
+                if alwaysPatterns.count == 1 && alwaysPatterns[0] == "*" {
+                    Text("This will allow \(MCPToolFormatter.formatToolName(tool)) until OpenCode is restarted.")
                         .font(.system(size: 11))
                         .foregroundColor(secondaryTextColor)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("This will allow the following patterns until OpenCode is restarted:")
+                            .font(.system(size: 11))
+                            .foregroundColor(secondaryTextColor)
+                        ForEach(alwaysPatterns, id: \.self) { pattern in
+                            Text("  - \(pattern)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(secondaryTextColor)
+                                .lineLimit(1)
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-            .opacity(showContent ? 1 : 0)
-            .offset(x: showContent ? 0 : -10)
 
-            Spacer()
+                // Confirm / Cancel buttons
+                HStack(spacing: 12) {
+                    // Tool info (same as normal mode)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(MCPToolFormatter.formatToolName(tool))
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundColor(TerminalColors.amber)
+                        if let input = toolInput {
+                            Text(input)
+                                .font(.system(size: 11))
+                                .foregroundColor(secondaryTextColor)
+                                .lineLimit(1)
+                        }
+                    }
 
-            // Deny button — matches InlineApprovalButtons styling
-            Button {
-                onDeny()
-            } label: {
-                Text("Deny")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white.opacity(0.6))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .fixedSize(horizontal: true, vertical: false)
-            .opacity(showDenyButton ? 1 : 0)
-            .scaleEffect(showDenyButton ? 1 : 0.8)
+                    Spacer()
 
-            // Allow button
-            Button {
-                onApprove()
-            } label: {
-                Text("Allow")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(Color.black.opacity(0.88))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.92))
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .fixedSize(horizontal: true, vertical: false)
-            .opacity(showAllowButton ? 1 : 0)
-            .scaleEffect(showAllowButton ? 1 : 0.8)
+                    Button {
+                        isConfirmingAlways = false
+                    } label: {
+                        Text("Cancel")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
 
-            // Always button — only when onApproveAlways is provided.
-            // Red text on the normal Allow-style background.
-            if let onApproveAlways {
-                Button {
-                    onApproveAlways()
-                } label: {
-                    Text("Always")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(Color(red: 0.92, green: 0.30, blue: 0.25))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.92))
-                        .clipShape(Capsule())
+                    Button {
+                        isConfirmingAlways = false
+                        onApproveAlways?()
+                    } label: {
+                        Text("Confirm")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Color(red: 0.92, green: 0.30, blue: 0.25))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.92))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
                 }
-                .buttonStyle(.plain)
-                .fixedSize(horizontal: true, vertical: false)
-                .opacity(showAlwaysButton ? 1 : 0)
-                .scaleEffect(showAlwaysButton ? 1 : 0.8)
+            } else {
+                // Normal three-button layout
+                HStack(spacing: 12) {
+                    // Tool info
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(MCPToolFormatter.formatToolName(tool))
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundColor(TerminalColors.amber)
+                        if let input = toolInput {
+                            Text(input)
+                                .font(.system(size: 11))
+                                .foregroundColor(secondaryTextColor)
+                                .lineLimit(1)
+                        }
+                    }
+                    .opacity(showContent ? 1 : 0)
+                    .offset(x: showContent ? 0 : -10)
+
+                    Spacer()
+
+                    // Deny button
+                    Button {
+                        onDeny()
+                    } label: {
+                        Text("Deny")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .opacity(showDenyButton ? 1 : 0)
+                    .scaleEffect(showDenyButton ? 1 : 0.8)
+
+                    // Allow button
+                    Button {
+                        onApprove()
+                    } label: {
+                        Text("Allow")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Color.black.opacity(0.88))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.92))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .opacity(showAllowButton ? 1 : 0)
+                    .scaleEffect(showAllowButton ? 1 : 0.8)
+
+                    // Always button — only when onApproveAlways is provided.
+                    if onApproveAlways != nil {
+                        Button {
+                            isConfirmingAlways = true
+                        } label: {
+                            Text("Always")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(Color(red: 0.92, green: 0.30, blue: 0.25))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.white.opacity(0.92))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .opacity(showAlwaysButton ? 1 : 0)
+                        .scaleEffect(showAlwaysButton ? 1 : 0.8)
+                    }
+                }
             }
         }
         .frame(minHeight: 44)  // Consistent height with other bars
