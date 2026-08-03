@@ -66,6 +66,17 @@ actor SessionStore {
     /// correct display order regardless of event arrival timing.
     private var blockOrderings: [String: BlockOrdering] = [:]
 
+    /// Sessions that have been explicitly opened via a `SessionStarted`
+    /// event (or via Claude's hook path). The `realtimeChatItemBatch` /
+    /// `chatItemBatch` / `chatItemUpdate` entry points filter against this
+    /// set: chat-item updates for unknown sessionIds are dropped instead of
+    /// being auto-promoted to a top-level `SessionState`. This is the
+    /// contract that keeps subagent child sessions (which never emit a
+    /// SessionStarted because `OpencodeHookAdapter.adaptSubagentEvent`
+    /// short-circuits subagent events) from materializing as standalone
+    /// sessions in the UI. See docs/debug/2026-07-23-subagent-cleanup-bug.md.
+    private var registeredSessionIds: Set<String> = []
+
     // MARK: - Published State (for UI)
 
     /// Publisher for session state changes (nonisolated for Combine subscription from any context)
@@ -103,6 +114,7 @@ actor SessionStore {
             await processHookEvent(hookEvent)
 
         case .codexSessionStarted(let sessionId, let cwd, let source):
+            registerSession(sessionId: sessionId)
             processCodexSessionStart(sessionId: sessionId, cwd: cwd, source: source)
 
         case .codexPromptSubmitted(let sessionId, let cwd, let prompt):
@@ -139,6 +151,7 @@ actor SessionStore {
             processCodexStop(sessionId: sessionId, cwd: cwd)
 
         case .opencodeSessionStarted(let sessionId, let cwd):
+            registerSession(sessionId: sessionId)
             processOpencodeSessionStart(sessionId: sessionId, cwd: cwd)
 
         case .opencodeProcessingStarted(let sessionId, let cwd):
@@ -150,14 +163,16 @@ actor SessionStore {
         case .opencodeStopped(let sessionId, let cwd):
             processOpencodeStop(sessionId: sessionId, cwd: cwd)
 
-        case .opencodePermissionRequested(let sessionId, let cwd, let permission, let requestId, let toolUseId, let input, let inputSummary):
+        case .opencodePermissionRequested(let sessionId, let cwd, let permission, let requestId, let toolUseId, let input, let inputSummary, let alwaysPatterns):
             processOpencodePermissionRequested(
                 sessionId: sessionId, cwd: cwd, permission: permission,
                 requestId: requestId, toolUseId: toolUseId,
-                input: input, inputSummary: inputSummary
+                input: input, inputSummary: inputSummary,
+                alwaysPatterns: alwaysPatterns
             )
 
         case .cursorSessionStarted(let sessionId, let cwd):
+            registerSession(sessionId: sessionId)
             processCursorSessionStart(sessionId: sessionId, cwd: cwd)
 
         case .cursorProcessingStarted(let sessionId, let cwd):
@@ -173,16 +188,16 @@ actor SessionStore {
             processCursorSessionEnd(sessionId: sessionId)
 
         case .chatItemUpdate(let update):
-            applyChatItemUpdate(update)
+            applyChatItemUpdateIfRegistered(update)
 
         case .chatItemBatch(let updates):
             for update in updates {
-                applyChatItemUpdate(update)
+                applyChatItemUpdateIfRegistered(update)
             }
 
         case .realtimeChatItemBatch(let updates):
             for update in updates {
-                applyChatItemUpdate(update, appliesLifecycleEffects: true)
+                applyChatItemUpdateIfRegistered(update, appliesLifecycleEffects: true)
             }
 
         case .permissionApproved(let sessionId, let toolUseId):
@@ -244,6 +259,39 @@ actor SessionStore {
         publishState()
     }
 
+    // MARK: - Session Registration
+
+    /// Mark a sessionId as a known top-level session. Called from each
+    /// `SessionStarted` branch in `process(_:)` and from `processHookEvent`
+    /// (Claude) when it first creates a session. See `registeredSessionIds`.
+    private func registerSession(sessionId: String) {
+        registeredSessionIds.insert(sessionId)
+    }
+
+    /// Drop `sessionId` from the registered set — typically called when the
+    /// session is removed (processSessionEnd, claude `status=ended`, etc.).
+    private func unregisterSession(sessionId: String) {
+        registeredSessionIds.remove(sessionId)
+    }
+
+    /// Filtered wrapper around `applyChatItemUpdate`: drops updates for
+    /// sessionIds that have never been explicitly registered, instead of
+    /// letting `applyChatItemUpdate`'s auto-create path materialize a fresh
+    /// top-level `SessionState`. Subagent child sessions rely on this to
+    /// stay invisible — they leak chat-item events (e.g. reasoning parts)
+    /// when `OpencodeHookAdapter`'s `cleanupState` fires prematurely, and
+    /// we must not promote those leaks to standalone sessions.
+    private func applyChatItemUpdateIfRegistered(
+        _ update: ChatItemUpdate,
+        appliesLifecycleEffects: Bool = false
+    ) {
+        if !registeredSessionIds.contains(update.sessionId) {
+            writeDebugLogAsync("[chat-item-update] dropped unregistered session=\(update.sessionId.prefix(12)) id=\(update.id.prefix(16))")
+            return
+        }
+        applyChatItemUpdate(update, appliesLifecycleEffects: appliesLifecycleEffects)
+    }
+
     // MARK: - Hook Event Processing
 
     private func processHookEvent(_ event: HookEvent) async {
@@ -266,6 +314,7 @@ actor SessionStore {
         // Track new session in Mixpanel
         if isNewSession {
             mixpanel?.track(event: "Session Started")
+            registerSession(sessionId: sessionId)
         }
 
         session.pid = event.pid
@@ -281,6 +330,7 @@ actor SessionStore {
         if event.status == "ended" {
             sessions.removeValue(forKey: sessionId)
             cancelPendingSync(sessionId: sessionId)
+            unregisterSession(sessionId: sessionId)
             return
         }
 
@@ -314,7 +364,8 @@ actor SessionStore {
     }
 
     private func createSession(from event: HookEvent) -> SessionState {
-        SessionState(
+        registerSession(sessionId: event.sessionId)
+        return SessionState(
             sessionId: event.sessionId,
             provider: .claude,
             cwd: event.cwd,
@@ -327,7 +378,8 @@ actor SessionStore {
     }
 
     private func createCodexSession(sessionId: String, cwd: String) -> SessionState {
-        SessionState(
+        registerSession(sessionId: sessionId)
+        return SessionState(
             sessionId: sessionId,
             provider: .codex,
             cwd: cwd,
@@ -460,6 +512,7 @@ actor SessionStore {
             ignoredCodexSessions.insert(sessionId)
             sessions.removeValue(forKey: sessionId)
             cancelPendingSync(sessionId: sessionId)
+            unregisterSession(sessionId: sessionId)
             writeDebugLogAsync("[codex-lifecycle] ignored internal startup session=\(sessionId)")
             return
         }
@@ -781,7 +834,8 @@ actor SessionStore {
     // MARK: - OpenCode Session Processing
 
     private func createOpencodeSession(sessionId: String, cwd: String) -> SessionState {
-        SessionState(
+        registerSession(sessionId: sessionId)
+        return SessionState(
             sessionId: sessionId,
             provider: .opencode,
             cwd: cwd,
@@ -842,6 +896,10 @@ actor SessionStore {
     }
 
     private func processOpencodeProcessingStarted(sessionId: String, cwd: String) {
+        if sessions[sessionId] == nil, !registeredSessionIds.contains(sessionId) {
+            writeDebugLogAsync("[opencode-lifecycle] ignored pre-registration processingStarted session=\(sessionId.prefix(12)) cwd=\(cwd)")
+            return
+        }
         var session = sessions[sessionId] ?? createOpencodeSession(sessionId: sessionId, cwd: cwd)
         enrichOpencodeRuntimeMetadata(session: &session)
         session.lastActivity = Date()
@@ -873,6 +931,10 @@ actor SessionStore {
     }
 
     private func processOpencodeWaitingForUserInput(sessionId: String, cwd: String) {
+        if sessions[sessionId] == nil, !registeredSessionIds.contains(sessionId) {
+            writeDebugLogAsync("[opencode-lifecycle] ignored pre-registration waitingForUserInput session=\(sessionId.prefix(12)) cwd=\(cwd)")
+            return
+        }
         var session = sessions[sessionId] ?? createOpencodeSession(sessionId: sessionId, cwd: cwd)
         enrichOpencodeRuntimeMetadata(session: &session)
         session.lastActivity = Date()
@@ -893,6 +955,10 @@ actor SessionStore {
     }
 
     private func processOpencodeStop(sessionId: String, cwd: String) {
+        if sessions[sessionId] == nil, !registeredSessionIds.contains(sessionId) {
+            writeDebugLogAsync("[opencode-lifecycle] ignored pre-registration stop session=\(sessionId.prefix(12)) cwd=\(cwd)")
+            return
+        }
         var session = sessions[sessionId] ?? createOpencodeSession(sessionId: sessionId, cwd: cwd)
         let hadRunningTools = hasRunningTools(in: session)
         enrichOpencodeRuntimeMetadata(session: &session)
@@ -935,8 +1001,13 @@ actor SessionStore {
         requestId: String,
         toolUseId: String?,
         input: [String: String],
-        inputSummary: String?
+        inputSummary: String?,
+        alwaysPatterns: [String] = []
     ) {
+        if sessions[sessionId] == nil, !registeredSessionIds.contains(sessionId) {
+            writeDebugLogAsync("[opencode-lifecycle] ignored pre-registration permissionAsked session=\(sessionId.prefix(12)) cwd=\(cwd)")
+            return
+        }
         var session = sessions[sessionId] ?? createOpencodeSession(sessionId: sessionId, cwd: cwd)
         enrichOpencodeRuntimeMetadata(session: &session)
         session.lastActivity = Date()
@@ -948,7 +1019,8 @@ actor SessionStore {
             toolName: permission,
             toolInput: toolInput.isEmpty ? nil : toolInput,
             receivedAt: Date(),
-            opencodeRequestId: requestId
+            opencodeRequestId: requestId,
+            alwaysPatterns: alwaysPatterns
         )
         // opencode permission prompts use the in-process approval path
         // (Nook → plugin socket → client.permissionReply). The phase must be
@@ -2071,6 +2143,7 @@ actor SessionStore {
         recentlyStoppedCodexSessions.removeValue(forKey: sessionId)
         pendingCodexStartupSessions.remove(sessionId)
         ignoredCodexSessions.remove(sessionId)
+        unregisterSession(sessionId: sessionId)
     }
 
     // MARK: - History Loading
@@ -2260,6 +2333,7 @@ actor SessionStore {
                 recentlyStoppedCodexSessions.removeValue(forKey: sessionId)
                 pendingCodexStartupSessions.remove(sessionId)
                 ignoredCodexSessions.remove(sessionId)
+                unregisterSession(sessionId: sessionId)
                 stateChanged = true
                 continue
             }
@@ -2272,6 +2346,7 @@ actor SessionStore {
                 recentlyStoppedCodexSessions.removeValue(forKey: sessionId)
                 pendingCodexStartupSessions.remove(sessionId)
                 ignoredCodexSessions.remove(sessionId)
+                unregisterSession(sessionId: sessionId)
                 stateChanged = true
                 continue
             }
@@ -2325,6 +2400,7 @@ actor SessionStore {
                     recentlyStoppedCodexSessions.removeValue(forKey: sessionId)
                     pendingCodexStartupSessions.remove(sessionId)
                     ignoredCodexSessions.remove(sessionId)
+                    unregisterSession(sessionId: sessionId)
                     stateChanged = true
                     continue
                 }

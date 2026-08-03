@@ -159,6 +159,11 @@ final class OpencodeHookAdapter: @unchecked Sendable {
     /// field (see opencode/src/tool/task.ts:75-76). We use it to keep the subagent
     /// out of the instance list and route its activity into the parent's chat view.
     private static var subagentToParent: [String: String] = [:]
+    /// child sessionIDs that have been finalized (cleanupState called).
+    /// After finalization, any late-arriving events (e.g. session.idle)
+    /// must be dropped to prevent them from falling through to per-session
+    /// handlers and creating phantom top-level SessionState entries.
+    private static var completedSubagentChildren: Set<String> = []
     /// child sessionID → the parent session's `task` tool callID. Established when
     /// the parent's `preTool(tool=task)` arrives and the child session is already
     /// known; used to tag subsequent subagent tool events with the right task id.
@@ -232,6 +237,20 @@ final class OpencodeHookAdapter: @unchecked Sendable {
             return adaptSubagentEvent(envelope: envelope, props: props, childId: sessionId, parentId: parentID)
         }
 
+        // Late-arriving events for a subagent child that was already
+        // finalized. After `finalizeSubagent` runs, `subagentToParent`
+        // is cleared, so subsequent events (e.g. session.idle arriving
+        // after session.status=idle) would fall through to per-session
+        // handlers and create phantom top-level SessionState entries
+        // (cwd="" → displayTitle="/"). Drop them here.
+        lock.lock()
+        let isCompletedChild = completedSubagentChildren.contains(sessionId)
+        lock.unlock()
+        if isCompletedChild {
+            Self.logNotice("→ subagent completed, dropping late event session=\(sessionId) envelopeType=\(envelope.type)")
+            return []
+        }
+
         // DIAGNOSTIC (#79): events whose sessionId isn't yet in
         // `subagentToParent` fall through to the per-session handlers below.
         // For sessions that turn out to be subagents (registered later via
@@ -298,25 +317,54 @@ final class OpencodeHookAdapter: @unchecked Sendable {
             }
             return handleSubagentToolPart(childId: childId, parentId: parentId, part: part)
 
-        case "session.status", "session.idle":
-            // Subagent session is going idle — flush any text/reasoning buffers
-            // that were accidentally accumulated for the child (shouldn't happen
-            // now that we route early, but the safety net is cheap and prevents
-            // stale buffers from bleeding into the parent on next start).
-            let cwd: String = {
-                lock.lock()
-                let v = sessionCwd[childId] ?? ""
-                lock.unlock()
-                return v
-            }()
-            let flushed = flushPendingText(forSession: childId, cwd: cwd)
-            cleanupState(forSession: childId)
-            Self.logNotice("→ subagent stop routed to parent child=\(childId) parent=\(parentId) flushed=\(flushed.count)")
-            return flushed
+        case "session.status":
+            // session.status fires for both busy (work started) and idle
+            // (between ops or truly ended). Only the *terminal* idle should
+            // clear the subagent mapping — `session.status=busy` is the
+            // subagent starting work, and clearing then would drop the
+            // mapping while the subagent is still alive, letting every
+            // subsequent event leak through to the per-session handlers
+            // (handlePartUpdated / handleMessageUpdated) and create a
+            // phantom top-level SessionState in SessionStore.
+            let statusType = (props["status"]?.value as? [String: Any])?["type"] as? String ?? ""
+            guard statusType == "idle" else { return [] }
+            return finalizeSubagent(childId: childId, parentId: parentId)
+
+        case "session.idle":
+            // Legacy compatibility event — subagent has truly terminated.
+            return finalizeSubagent(childId: childId, parentId: parentId)
+
+        case "permission.asked":
+            // Permission requests from subagents must be routed to the
+            // parent session — the user approves/denies via the parent's
+            // chat view. Rewrite sessionId to parentId so the event lands
+            // in the parent's SessionState.
+            return handleSubagentPermissionAsked(props: props, childId: childId, parentId: parentId)
 
         default:
             return []
         }
+    }
+
+    /// Final cleanup path for a subagent that has truly terminated. Flushes
+    /// any text/reasoning buffers the child may have accumulated (shouldn't
+    /// happen now that we route early, but the safety net is cheap and
+    /// prevents stale buffers bleeding into the parent on next start),
+    /// then clears the child's bookkeeping from `subagentToParent` etc.
+    private static func finalizeSubagent(childId: String, parentId: String) -> [OpencodeSessionEvent] {
+        let cwd: String = {
+            lock.lock()
+            let v = sessionCwd[childId] ?? ""
+            lock.unlock()
+            return v
+        }()
+        let flushed = flushPendingText(forSession: childId, cwd: cwd)
+        cleanupState(forSession: childId)
+        lock.lock()
+        completedSubagentChildren.insert(childId)
+        lock.unlock()
+        Self.logNotice("→ subagent stop routed to parent child=\(childId) parent=\(parentId) flushed=\(flushed.count)")
+        return flushed
     }
 
     /// Convert a subagent's tool part into a subagentToolExecuted /
@@ -364,6 +412,54 @@ final class OpencodeHookAdapter: @unchecked Sendable {
         default:
             return []
         }
+    }
+
+    /// Handle a `permission.asked` event from a subagent session. Rewrite the
+    /// sessionId to parentId so the permission request lands in the parent's
+    /// SessionState and the user sees the Allow/Deny buttons in the parent's
+    /// chat view.
+    private static func handleSubagentPermissionAsked(props: [String: AnyCodable], childId: String, parentId: String) -> [OpencodeSessionEvent] {
+        let cwd: String = {
+            lock.lock()
+            let v = sessionCwd[parentId] ?? ""
+            lock.unlock()
+            return v
+        }()
+        guard let requestId = props["id"]?.value as? String, !requestId.isEmpty else {
+            Self.logNotice("→ subagent permissionAsked dropped (no id) child=\(childId) parent=\(parentId)")
+            return []
+        }
+        let tool = props["tool"]?.value as? [String: Any]
+        let callId = tool?["callID"] as? String
+        let permission = (props["permission"]?.value as? String) ?? "tool"
+        let patterns: [String] = {
+            guard let arr = props["patterns"]?.value as? [Any] else { return [] }
+            return arr.compactMap { $0 as? String }
+        }()
+        let metadata = props["metadata"]?.value as? [String: Any] ?? [:]
+        let alwaysPatterns: [String] = {
+            guard let arr = props["always"]?.value as? [Any] else { return [] }
+            return arr.compactMap { $0 as? String }
+        }()
+
+        var inputMap: [String: String] = [:]
+        if let cmd = metadata["command"] as? String { inputMap["command"] = cmd }
+        if let filePath = metadata["filepath"] as? String ?? metadata["file_path"] as? String {
+            inputMap["file_path"] = filePath
+        }
+        if let diff = metadata["diff"] as? String { inputMap["diff"] = diff }
+        if let url = metadata["url"] as? String { inputMap["url"] = url }
+        if !patterns.isEmpty { inputMap["patterns"] = patterns.joined(separator: ", ") }
+
+        let inputSummary = buildInputSummary(toolName: permission, input: metadata)
+
+        Self.logNotice("→ subagent permissionAsked routed to parent child=\(childId) parent=\(parentId) requestId=\(requestId) tool=\(permission) callID=\(callId ?? "-") summary=\(inputSummary) always=\(alwaysPatterns)")
+        return [.permissionAsked(
+            sessionId: parentId, cwd: cwd, requestId: requestId,
+            toolName: permission, toolUseId: callId,
+            input: inputMap, inputSummary: inputSummary,
+            alwaysPatterns: alwaysPatterns
+        )]
     }
 
     // MARK: - Session Handlers
@@ -590,6 +686,10 @@ final class OpencodeHookAdapter: @unchecked Sendable {
             return arr.compactMap { $0 as? String }
         }()
         let metadata = props["metadata"]?.value as? [String: Any] ?? [:]
+        let alwaysPatterns: [String] = {
+            guard let arr = props["always"]?.value as? [Any] else { return [] }
+            return arr.compactMap { $0 as? String }
+        }()
 
         // Build the input map mirroring handleToolPart's stringifyInput so
         // downstream consumers (ChatItemToolCall.input, MCPToolFormatter) can
@@ -605,11 +705,12 @@ final class OpencodeHookAdapter: @unchecked Sendable {
 
         let inputSummary = buildInputSummary(toolName: permission, input: metadata)
 
-        Self.logNotice("→ permissionAsked session=\(sessionId) requestId=\(requestId) tool=\(permission) callID=\(callId ?? "-") summary=\(inputSummary)")
+        Self.logNotice("→ permissionAsked session=\(sessionId) requestId=\(requestId) tool=\(permission) callID=\(callId ?? "-") summary=\(inputSummary) always=\(alwaysPatterns)")
         return [.permissionAsked(
             sessionId: sessionId, cwd: cwd, requestId: requestId,
             toolName: permission, toolUseId: callId,
-            input: inputMap, inputSummary: inputSummary
+            input: inputMap, inputSummary: inputSummary,
+            alwaysPatterns: alwaysPatterns
         )]
     }
 

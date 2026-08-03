@@ -1077,6 +1077,8 @@ struct NotchView: View {
 
         previousWaitingForInputIds = currentIds
         previousCompletionNotificationMarkers = currentCompletionMarkers
+
+        handleProcessingChange()
     }
 
     private func handleCompletionNotification(_ notification: SessionCompletionNotification) {
