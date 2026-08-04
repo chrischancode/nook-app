@@ -189,16 +189,19 @@ actor SessionStore {
 
         case .chatItemUpdate(let update):
             applyChatItemUpdateIfRegistered(update)
+            publishState()
 
         case .chatItemBatch(let updates):
             for update in updates {
                 applyChatItemUpdateIfRegistered(update)
             }
+            publishState()
 
         case .realtimeChatItemBatch(let updates):
             for update in updates {
                 applyChatItemUpdateIfRegistered(update, appliesLifecycleEffects: true)
             }
+            publishState()
 
         case .permissionApproved(let sessionId, let toolUseId):
             await processPermissionApproved(sessionId: sessionId, toolUseId: toolUseId)

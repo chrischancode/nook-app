@@ -1382,10 +1382,11 @@ final class OpencodeHookAdapter: @unchecked Sendable {
     /// - Base64 payload is empty or contains invalid characters
     private static func parseImageDataURI(_ uri: String) -> ImageDataURI? {
         guard uri.hasPrefix("data:") else { return nil }
-        guard let commaIndex = uri.firstIndex(of: ",") else { return nil }
+        let afterData = uri.index(uri.startIndex, offsetBy: 5) // skip "data:"
+        guard let commaIndex = uri[afterData...].firstIndex(of: ",") else { return nil }
 
         // Parse header: "data:image/png;base64"
-        let header = String(uri[uri.index(after: uri.startIndex)..<commaIndex])
+        let header = String(uri[afterData..<commaIndex])
         let parts = header.split(separator: ";")
         guard let contentType = parts.first, !contentType.isEmpty else { return nil }
 
