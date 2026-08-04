@@ -1304,9 +1304,13 @@ actor SessionStore {
                     session.phase = hasRunningTools(in: session) ? .processing : .idle
                 }
             }
+            // Extract tool input summary for the session list display.
+            // Without this, lastMessage keeps the previous value (e.g. user's
+            // prompt), causing the session list to show [tool name] + [user prompt].
+            let toolInputSummary = Self.extractToolInputSummary(tc)
             session.conversationInfo = ConversationInfo(
                 summary: session.conversationInfo.summary,
-                lastMessage: session.conversationInfo.lastMessage,
+                lastMessage: toolInputSummary.isEmpty ? session.conversationInfo.lastMessage : toolInputSummary,
                 lastMessageRole: "tool",
                 lastToolName: tc.name,
                 firstUserMessage: session.conversationInfo.firstUserMessage,
@@ -1322,6 +1326,23 @@ actor SessionStore {
     private func makeOpencodeToolId(for sessionId: String) -> String {
         let millis = Int(Date().timeIntervalSince1970 * 1000)
         return "opencode-bash-\(sessionId)-\(millis)"
+    }
+
+    /// Extract a short human-readable summary from a tool call's input dictionary.
+    /// Mirrors Claude's ConversationParser.formatToolInput and OpenCode's
+    /// buildInputSummary logic — show the most meaningful field for each tool type.
+    private static func extractToolInputSummary(_ tc: ChatItemToolCall) -> String {
+        let lower = tc.name.lowercased()
+        if lower == "bash", let cmd = tc.input["command"] { return cmd }
+        if let filePath = tc.input["file_path"] ?? tc.input["filePath"] { return filePath }
+        if let name = tc.input["name"] { return name }
+        if let pattern = tc.input["pattern"] { return pattern }
+        if let description = tc.input["description"] { return String(description.prefix(60)) }
+        if let query = tc.input["query"] { return String(query.prefix(60)) }
+        if let url = tc.input["url"] { return url }
+        if let prompt = tc.input["prompt"] { return String(prompt.prefix(60)) }
+        if let content = tc.input["content"] { return String(content.prefix(60)) }
+        return tc.name
     }
 
     private func enrichOpencodeRuntimeMetadata(session: inout SessionState) {
