@@ -171,6 +171,9 @@ actor SessionStore {
                 alwaysPatterns: alwaysPatterns
             )
 
+        case .opencodePromptSubmitted(let sessionId, let cwd, let prompt):
+            processOpencodePromptSubmitted(sessionId: sessionId, cwd: cwd, prompt: prompt)
+
         case .cursorSessionStarted(let sessionId, let cwd):
             registerSession(sessionId: sessionId)
             processCursorSessionStart(sessionId: sessionId, cwd: cwd)
@@ -995,6 +998,39 @@ actor SessionStore {
         if !hadRunningTools {
             publishCompletionNotification(for: session)
         }
+    }
+
+    private func processOpencodePromptSubmitted(sessionId: String, cwd: String, prompt: String) {
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty else { return }
+        registerSession(sessionId: sessionId)
+        var session = sessions[sessionId] ?? createOpencodeSession(sessionId: sessionId, cwd: cwd)
+        enrichOpencodeRuntimeMetadata(session: &session)
+        session.lastActivity = Date()
+        session.completionNotificationAt = nil
+        session.phase = .processing
+        let now = Date()
+        let firstUserMessage = session.conversationInfo.firstUserMessage ?? trimmedPrompt
+        session.conversationInfo = ConversationInfo(
+            summary: session.conversationInfo.summary,
+            lastMessage: trimmedPrompt,
+            lastMessageRole: "user",
+            lastToolName: nil,
+            firstUserMessage: firstUserMessage,
+            lastUserMessageDate: now,
+            usage: session.conversationInfo.usage
+        )
+        sessions[sessionId] = session
+        let millis = Int(now.timeIntervalSince1970 * 1000)
+        let id = "opencode-prompt-\(sessionId)-\(millis)"
+        let update = ChatItemUpdate(
+            id: id, sessionId: sessionId,
+            block: .userPrompt(trimmedPrompt),
+            ordering: .messageRelative(messageId: id, typePriority: BlockTypePriority.forBlock(.userPrompt(trimmedPrompt)), blockIndex: 0),
+            mutation: .insert, provider: .opencode
+        )
+        applyChatItemUpdate(update, appliesLifecycleEffects: true)
+        publishState()
     }
 
     private func processOpencodePermissionRequested(

@@ -96,6 +96,14 @@ enum SessionEvent: Sendable {
     /// should also drive lifecycle effects such as phase/tool tracking.
     case realtimeChatItemBatch([ChatItemUpdate])
 
+    // MARK: - OpenCode Fallback Events
+
+    /// OpenCode's `message.part.updated(type=text)` event for user
+    /// messages never arrives at Nook (socket transport drops it).
+    /// This event is emitted locally from ChatView as a fallback so
+    /// the user's prompt appears in the chat immediately.
+    case opencodePromptSubmitted(sessionId: String, cwd: String, prompt: String)
+
     // MARK: - Permission Events (user actions)
 
     /// User approved a permission request
@@ -348,6 +356,8 @@ extension SessionEvent: CustomStringConvertible {
             return "chatItemBatch(count: \(updates.count))"
         case .realtimeChatItemBatch(let updates):
             return "realtimeChatItemBatch(count: \(updates.count))"
+        case .opencodePromptSubmitted(let sessionId, _, let prompt):
+            return "opencodePromptSubmitted(session: \(sessionId.prefix(8)), prompt: \(prompt.prefix(40)))"
         }
     }
 }

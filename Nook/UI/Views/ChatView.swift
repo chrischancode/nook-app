@@ -721,9 +721,14 @@ struct ChatView: View {
         resumeAutoscroll()
         shouldScrollToBottom = true
 
-        // Don't add to history here - it will be synced from JSONL when UserPromptSubmit event fires
+        // Emit a local fallback event immediately so the user's
+        // prompt appears in the chat even if opencode's
+        // message.part.updated(type=text) never reaches Nook.
         Task {
             await sendToSession(text)
+            await SessionStore.shared.process(.opencodePromptSubmitted(
+                sessionId: sessionId, cwd: session.cwd, prompt: text
+            ))
         }
     }
 
