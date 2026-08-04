@@ -203,12 +203,19 @@ final class OpencodeChatItemAdapter: @unchecked Sendable {
                 if let error, !error.isEmpty { return error }
                 return nil
             }()
+            // Parse structured result for todo tools — opencode outputs
+            // a JSON array of todos that the UI renders as a checklist.
+            let structuredResult: ToolResultData? = {
+                guard ToolKind.classify(toolName) == .todoWrite,
+                      let output, !output.isEmpty else { return nil }
+                return Self.parseTodoWriteOutput(output)
+            }()
             return [ChatItemUpdate(
                 id: toolId, sessionId: sid,
                 block: .toolCall(ChatItemToolCall(
                     toolId: toolId, name: toolName,
                     input: [:], status: finalStatus,
-                    result: resultBody, structuredResult: nil,
+                    result: resultBody, structuredResult: structuredResult,
                     subagentTools: []
                 )),
                 ordering: .messageRelative(messageId: msgId, typePriority: .action, blockIndex: 0),
@@ -267,6 +274,40 @@ final class OpencodeChatItemAdapter: @unchecked Sendable {
         guard let output, !output.isEmpty else { return false }
         let tail = output.suffix(1024)
         return tail.contains("<bash_metadata>")
+    }
+
+    /// Parse opencode's todo tool output into a `TodoWriteResult`.
+    ///
+    /// opencode outputs a JSON array of todos:
+    /// ```json
+    /// [
+    ///   {"content": "Task 1", "status": "pending", "priority": "high"},
+    ///   {"content": "Task 2", "status": "completed", "priority": "medium"}
+    /// ]
+    /// ```
+    ///
+    /// The `oldTodos` field is set to empty because opencode's postTool
+    /// event only carries the new state (the full list replacement).
+    static func parseTodoWriteOutput(_ output: String) -> ToolResultData? {
+        guard let data = output.data(using: .utf8),
+              let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return nil
+        }
+
+        let todos = jsonArray.compactMap { item -> TodoItem? in
+            guard let content = item["content"] as? String,
+                  let status = item["status"] as? String else {
+                return nil
+            }
+            return TodoItem(
+                content: content,
+                status: status,
+                activeForm: nil
+            )
+        }
+
+        guard !todos.isEmpty else { return nil }
+        return .todoWrite(TodoWriteResult(oldTodos: [], newTodos: todos))
     }
 
 }
