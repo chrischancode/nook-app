@@ -1288,7 +1288,12 @@ actor SessionStore {
                 // permission.asked, which surfaces here as a toolCall insert.
                 // Without this guard the phase would flip back to .processing
                 // and the user would never see the approval buttons.
-                if !session.phase.isWaitingForApproval && !session.phase.isWaitingForTerminalApproval {
+                //
+                // Also don't overwrite waitingForInput for askUserQuestion tools:
+                // question.asked sets .waitingForInput before the preTool arrives,
+                // and the preTool would incorrectly flip it back to .processing.
+                let isAskQuestion = ToolCallItem.kind(of: tc.name) == .askUserQuestion
+                if !session.phase.isWaitingForApproval && !session.phase.isWaitingForTerminalApproval && !isAskQuestion {
                     session.phase = .processing
                 }
             } else {
@@ -1785,7 +1790,12 @@ actor SessionStore {
     // MARK: - Permission Processing
 
     private func processPermissionApproved(sessionId: String, toolUseId: String) async {
-        guard var session = sessions[sessionId] else { return }
+        guard var session = sessions[sessionId] else {
+            Self.logger.warning("permissionApproved: session not found sessionId=\(sessionId.prefix(8), privacy: .public)")
+            return
+        }
+
+        Self.logger.info("permissionApproved: processing toolUseId=\(toolUseId.prefix(12), privacy: .public) currentPhase=\(String(describing: session.phase), privacy: .public)")
 
         // Update tool status in chat history first
         updateToolStatus(in: &session, toolId: toolUseId, status: .running)
@@ -1793,6 +1803,7 @@ actor SessionStore {
         // Check if there are other tools still waiting for approval
         if let nextPending = findNextPendingTool(in: session, excluding: toolUseId) {
             // Another tool is waiting - stay in waitingForApproval with that tool's context
+            Self.logger.info("permissionApproved: found next pending tool=\(nextPending.id.prefix(12), privacy: .public) name=\(nextPending.name, privacy: .public)")
             let newPhase = SessionPhase.waitingForApproval(PermissionContext(
                 toolUseId: nextPending.id,
                 toolName: nextPending.name,
@@ -1802,22 +1813,32 @@ actor SessionStore {
             if session.phase.canTransition(to: newPhase) {
                 session.phase = newPhase
                 Self.logger.debug("Switched to next pending tool: \(nextPending.id.prefix(12), privacy: .public)")
+            } else {
+                Self.logger.warning("permissionApproved: cannot transition to next pending tool phase current=\(String(describing: session.phase), privacy: .public) target=\(String(describing: newPhase), privacy: .public)")
             }
         } else {
             // No more pending tools - transition to processing
             if case .waitingForApproval(let ctx) = session.phase, ctx.toolUseId == toolUseId {
                 if session.phase.canTransition(to: .processing) {
                     session.phase = .processing
+                    Self.logger.info("permissionApproved: transitioned to processing")
+                } else {
+                    Self.logger.warning("permissionApproved: cannot transition to processing current=\(String(describing: session.phase), privacy: .public)")
                 }
-            } else if case .waitingForApproval = session.phase {
+            } else if case .waitingForApproval(let ctx) = session.phase {
                 // The approved tool wasn't the one in phase context, but no others pending
                 // This can happen if tools were approved out of order
+                Self.logger.warning("permissionApproved: tool mismatch phaseTool=\(ctx.toolUseId.prefix(12), privacy: .public) approvedTool=\(toolUseId.prefix(12), privacy: .public)")
                 if session.phase.canTransition(to: .processing) {
                     session.phase = .processing
+                    Self.logger.info("permissionApproved: transitioned to processing (out of order)")
                 }
+            } else {
+                Self.logger.warning("permissionApproved: unexpected phase=\(String(describing: session.phase), privacy: .public)")
             }
         }
 
+        Self.logger.info("permissionApproved: final phase=\(String(describing: session.phase), privacy: .public)")
         sessions[sessionId] = session
     }
 

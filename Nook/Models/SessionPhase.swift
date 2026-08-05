@@ -61,7 +61,10 @@ struct PermissionContext: Sendable {
         if lowerTool == "external_directory" {
             // opencode external-directory permission: show the file path
             // that triggered the external-directory check.
-            if let filepath = input["filepath"]?.value as? String {
+            // Note: opencode plugin stores filepath as "file_path" (underscore),
+            // but permission.asked events may use "filepath" (no underscore).
+            // Check both to handle either format.
+            if let filepath = input["filepath"]?.value as? String ?? input["file_path"]?.value as? String {
                 let short = Self.abbreviatePath(filepath)
                 return short.count > 100 ? String(short.prefix(100)) + "..." : short
             }
