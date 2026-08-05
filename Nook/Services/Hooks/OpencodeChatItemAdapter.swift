@@ -11,6 +11,7 @@
 //
 
 import Foundation
+import os.log
 
 /// Stateful adapter that converts OpencodeSessionEvent into ChatItemUpdate
 /// with proper per-message block indexing. Maintains the messageId context
@@ -21,6 +22,7 @@ final class OpencodeChatItemAdapter: @unchecked Sendable {
     static let shared = OpencodeChatItemAdapter()
 
     private let lock = NSLock()
+    private static let logger = Logger(subsystem: "com.celestial.Nook", category: "OpencodeChatItemAdapter")
 
     /// sessionID → most recently seen messageId (set by message.updated events)
     private var currentMessageIdBySession: [String: String] = [:]
@@ -228,6 +230,7 @@ final class OpencodeChatItemAdapter: @unchecked Sendable {
             let idx = nextBlockIndex(sessionId: sid, messageId: msgId)
             let imageBlock = ImageBlock(mediaType: mediaType, base64Data: base64Data)
             let id = ChatItemIdFactory.opencodeBlockId(messageId: msgId, typePrefix: "image", blockIndex: idx)
+            Self.logger.debug("image event: sessionId=\(sid, privacy: .public) messageId=\(messageId ?? "nil", privacy: .public) resolvedMsgId=\(msgId, privacy: .public) id=\(id, privacy: .public) blockIndex=\(idx, privacy: .public)")
             return [ChatItemUpdate(
                 id: id, sessionId: sid,
                 block: .image(imageBlock),
