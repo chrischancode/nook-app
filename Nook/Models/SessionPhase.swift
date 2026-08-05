@@ -68,6 +68,12 @@ struct PermissionContext: Sendable {
                 let short = Self.abbreviatePath(filepath)
                 return short.count > 100 ? String(short.prefix(100)) + "..." : short
             }
+            // Fallback: external_directory may carry a bash command that accesses
+            // external paths. Extract the command for display.
+            if let command = input["command"]?.value as? String {
+                let short = Self.abbreviatePath(command)
+                return short.count > 100 ? String(short.prefix(100)) + "..." : short
+            }
         }
 
         // Switch on provider-agnostic kind — opencode emits lowercase
