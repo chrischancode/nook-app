@@ -77,6 +77,12 @@ actor SessionStore {
     /// sessions in the UI. See docs/debug/2026-07-23-subagent-cleanup-bug.md.
     private var registeredSessionIds: Set<String> = []
 
+    /// Buffer for chat-item updates that arrive before their session is registered.
+    /// Subagent child sessions are intentionally never registered (they don't emit
+    /// SessionStarted), so their buffered updates are naturally dropped. Top-level
+    /// sessions get registered via processOpencodeSessionStart and flush their buffer.
+    private var earlyChatItemBuffer: [String: [ChatItemUpdate]] = [:]
+
     // MARK: - Published State (for UI)
 
     /// Publisher for session state changes (nonisolated for Combine subscription from any context)
@@ -272,12 +278,22 @@ actor SessionStore {
     /// (Claude) when it first creates a session. See `registeredSessionIds`.
     private func registerSession(sessionId: String) {
         registeredSessionIds.insert(sessionId)
+        // Flush any chat-item updates that arrived before session registration.
+        // This handles the race condition where opencode sends chat items
+        // (e.g. image) before the sessionStart event.
+        if let buffered = earlyChatItemBuffer.removeValue(forKey: sessionId) {
+            writeDebugLogAsync("[chat-item-update] flushing \(buffered.count) buffered updates for session=\(sessionId.prefix(12))")
+            for update in buffered {
+                applyChatItemUpdate(update, appliesLifecycleEffects: true)
+            }
+        }
     }
 
     /// Drop `sessionId` from the registered set — typically called when the
     /// session is removed (processSessionEnd, claude `status=ended`, etc.).
     private func unregisterSession(sessionId: String) {
         registeredSessionIds.remove(sessionId)
+        earlyChatItemBuffer.removeValue(forKey: sessionId)
     }
 
     /// Filtered wrapper around `applyChatItemUpdate`: drops updates for
@@ -292,16 +308,13 @@ actor SessionStore {
         appliesLifecycleEffects: Bool = false
     ) {
         if !registeredSessionIds.contains(update.sessionId) {
-            // For opencode provider, auto-register and create session if needed.
-            // This handles the race condition where chat-item events (e.g. image)
-            // arrive before sessionStart event registers the session.
-            if update.provider == .opencode {
-                registerSession(sessionId: update.sessionId)
-                writeDebugLogAsync("[chat-item-update] auto-registered opencode session=\(update.sessionId.prefix(12)) id=\(update.id.prefix(16))")
-            } else {
-                writeDebugLogAsync("[chat-item-update] dropped unregistered session=\(update.sessionId.prefix(12)) id=\(update.id.prefix(16))")
-                return
-            }
+            // Buffer early chat-item updates instead of dropping them.
+            // They will be flushed when the session is registered via processOpencodeSessionStart.
+            // Subagent child sessions are never registered, so their buffers
+            // are never flushed (and get cleaned up on session end).
+            earlyChatItemBuffer[update.sessionId, default: []].append(update)
+            writeDebugLogAsync("[chat-item-update] buffered for unregistered session=\(update.sessionId.prefix(12)) id=\(update.id.prefix(16)) bufferCount=\(earlyChatItemBuffer[update.sessionId]?.count ?? 0)")
+            return
         }
         applyChatItemUpdate(update, appliesLifecycleEffects: appliesLifecycleEffects)
     }
