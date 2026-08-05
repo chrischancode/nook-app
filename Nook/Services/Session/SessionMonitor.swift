@@ -9,6 +9,7 @@
 import AppKit
 import Combine
 import Foundation
+import os.log
 
 @MainActor
 class SessionMonitor: ObservableObject {
@@ -17,6 +18,7 @@ class SessionMonitor: ObservableObject {
     @Published var completionNotification: SessionCompletionNotification?
 
     private nonisolated static let codexHookEventQueue = AsyncHookEventQueue()
+    private static let logger = Logger(subsystem: "com.celestial.Nook", category: "SessionMonitor")
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -193,14 +195,18 @@ class SessionMonitor: ObservableObject {
         Task {
             guard let session = await SessionStore.shared.session(for: sessionId),
                   let permission = session.activePermission else {
+                Self.logger.warning("approvePermission: session or permission not found sessionId=\(sessionId.prefix(8), privacy: .public)")
                 return
             }
+
+            Self.logger.info("approvePermission: sessionId=\(sessionId.prefix(8), privacy: .public) toolUseId=\(permission.toolUseId.prefix(12), privacy: .public) requestId=\(permission.opencodeRequestId ?? "nil", privacy: .public)")
 
             // OpenCode permission prompts are replied to via the plugin's
             // command socket (per_xxx id), not the Claude hook socket. When
             // the active permission carries an opencodeRequestId, route the
             // approval there and skip the Claude/Codex hook response.
             if let requestId = permission.opencodeRequestId {
+                Self.logger.info("approvePermission: sending permission.reply to opencode requestId=\(requestId, privacy: .public)")
                 OpencodeCommandSocket.shared.sendCommand([
                     "cmd": "permission.reply",
                     "requestId": requestId,
