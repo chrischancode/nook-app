@@ -292,8 +292,16 @@ actor SessionStore {
         appliesLifecycleEffects: Bool = false
     ) {
         if !registeredSessionIds.contains(update.sessionId) {
-            writeDebugLogAsync("[chat-item-update] dropped unregistered session=\(update.sessionId.prefix(12)) id=\(update.id.prefix(16))")
-            return
+            // For opencode provider, auto-register and create session if needed.
+            // This handles the race condition where chat-item events (e.g. image)
+            // arrive before sessionStart event registers the session.
+            if update.provider == .opencode {
+                registerSession(sessionId: update.sessionId)
+                writeDebugLogAsync("[chat-item-update] auto-registered opencode session=\(update.sessionId.prefix(12)) id=\(update.id.prefix(16))")
+            } else {
+                writeDebugLogAsync("[chat-item-update] dropped unregistered session=\(update.sessionId.prefix(12)) id=\(update.id.prefix(16))")
+                return
+            }
         }
         applyChatItemUpdate(update, appliesLifecycleEffects: appliesLifecycleEffects)
     }
