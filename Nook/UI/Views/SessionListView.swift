@@ -564,10 +564,6 @@ struct InstanceRow: View {
             if isWaitingForTerminalApproval || ((isWaitingForApproval || isWaitingForUserInput) && isInteractiveTool) {
                 // Interactive tools and terminal-side approval prompts need terminal focus.
                 HStack(spacing: 8) {
-                    IconButton(icon: "bubble.left") {
-                        onChat()
-                    }
-
                     // Go to Terminal button (only if yabai available)
                     if isYabaiAvailable {
                         TerminalButton(
@@ -579,7 +575,6 @@ struct InstanceRow: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             } else if isWaitingForApproval {
                 InlineApprovalButtons(
-                    onChat: onChat,
                     onApprove: onApprove,
                     onReject: onReject,
                     onApproveAlways: onApproveAlways,
@@ -589,11 +584,6 @@ struct InstanceRow: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             } else {
                 HStack(spacing: 8) {
-                    // Chat icon - always show
-                    IconButton(icon: "bubble.left") {
-                        onChat()
-                    }
-
                     // Focus icon (only for tmux instances with yabai)
                     if session.isInTmux && isYabaiAvailable {
                         IconButton(icon: "eye") {
@@ -615,7 +605,7 @@ struct InstanceRow: View {
         .padding(.trailing, 14)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
+        .onTapGesture(count: 1) {
             onChat()
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isWaitingForApproval)
@@ -660,25 +650,21 @@ struct InstanceRow: View {
 /// When the user taps "Always", the buttons swap to Confirm / Cancel
 /// (inline, no extra text — notch space is too tight for patterns).
 struct InlineApprovalButtons: View {
-    let onChat: () -> Void
     let onApprove: () -> Void
     let onReject: () -> Void
     let onApproveAlways: (() -> Void)?
     @Binding var isConfirmingAlways: Bool
 
-    @State private var showChatButton = false
     @State private var showDenyButton = false
     @State private var showAllowButton = false
     @State private var showAlwaysButton = false
 
     init(
-        onChat: @escaping () -> Void,
         onApprove: @escaping () -> Void,
         onReject: @escaping () -> Void,
         onApproveAlways: (() -> Void)? = nil,
         isConfirmingAlways: Binding<Bool> = .constant(false)
     ) {
-        self.onChat = onChat
         self.onApprove = onApprove
         self.onReject = onReject
         self.onApproveAlways = onApproveAlways
@@ -689,10 +675,6 @@ struct InlineApprovalButtons: View {
         // Button row only — patterns info is displayed by the parent (InstanceRow)
         HStack(spacing: 6) {
             if isConfirmingAlways {
-                IconButton(icon: "bubble.left") {
-                    onChat()
-                }
-
                 Button {
                     isConfirmingAlways = false
                 } label: {
@@ -723,12 +705,6 @@ struct InlineApprovalButtons: View {
                 .buttonStyle(.plain)
                 .fixedSize(horizontal: true, vertical: false)
             } else {
-                IconButton(icon: "bubble.left") {
-                    onChat()
-                }
-                .opacity(showChatButton ? 1 : 0)
-                .scaleEffect(showChatButton ? 1 : 0.8)
-
                 Button {
                     onReject()
                 } label: {
@@ -783,16 +759,13 @@ struct InlineApprovalButtons: View {
         }
         .onAppear {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.0)) {
-                showChatButton = true
-            }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.05)) {
                 showDenyButton = true
             }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.1)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.05)) {
                 showAllowButton = true
             }
             if onApproveAlways != nil {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.15)) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.1)) {
                     showAlwaysButton = true
                 }
             }
