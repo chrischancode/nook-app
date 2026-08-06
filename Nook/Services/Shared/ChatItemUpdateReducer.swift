@@ -45,6 +45,23 @@ enum ChatItemUpdateReducer {
         orderings: inout [String: BlockOrdering],
         now: Date
     ) {
+        // Dedup: skip userPrompt insert if an item with identical text already exists.
+        // This prevents the double-display bug where SessionStore creates a local
+        // message (ID="opencode-prompt-{sid}-{ts}") and opencode hook creates
+        // another (ID="opencode-{msgId}-prompt-{idx}") for the same user input.
+        if case .userPrompt(let newText) = update.block,
+           let existingIdx = items.firstIndex(where: {
+               if case .user(let existingText) = $0.type {
+                   return existingText == newText
+               }
+               return false
+           }) {
+            // Reuse the existing item's ID to keep ordering consistent.
+            let existingId = items[existingIdx].id
+            orderings[existingId] = update.ordering
+            return
+        }
+
         if let idx = items.firstIndex(where: { $0.id == update.id }) {
             let originalTimestamp = items[idx].timestamp
             let existingType = items[idx].type

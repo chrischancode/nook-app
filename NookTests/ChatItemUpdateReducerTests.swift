@@ -120,6 +120,40 @@ final class ChatItemUpdateReducerTests: XCTestCase {
         XCTAssertEqual(prompt, "original")
     }
 
+    /// Regression test: inserting a userPrompt with identical text to an existing
+    /// item (different ID) should be deduplicated to prevent double-display.
+    func testSameContentUserPromptDifferentIdIsDeduplicated() {
+        var items: [ChatHistoryItem] = []
+        var orderings: [String: BlockOrdering] = [:]
+
+        // Simulate local creation (SessionStore path)
+        apply(
+            id: "opencode-prompt-session-1234567890",
+            block: .userPrompt("Hello world"),
+            ordering: .messageRelative(messageId: "opencode-prompt-session-1234567890", typePriority: .reasoning, blockIndex: 0),
+            items: &items,
+            orderings: &orderings
+        )
+
+        // Simulate hook echo (OpencodeChatItemAdapter path) — different ID, same text
+        apply(
+            id: "opencode-msg-abc-prompt-0",
+            block: .userPrompt("Hello world"),
+            ordering: .messageRelative(messageId: "msg-abc", typePriority: .reasoning, blockIndex: 0),
+            items: &items,
+            orderings: &orderings
+        )
+
+        // Should only have one item, not two
+        XCTAssertEqual(items.count, 1, "Duplicate user prompt with same text should be deduplicated")
+        guard case .user(let prompt) = items[0].type else {
+            return XCTFail("Expected user prompt")
+        }
+        XCTAssertEqual(prompt, "Hello world")
+        // Original ID should be preserved
+        XCTAssertEqual(items[0].id, "opencode-prompt-session-1234567890")
+    }
+
     private func apply(
         id: String,
         block: ChatItemBlock,
