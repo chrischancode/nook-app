@@ -1121,6 +1121,12 @@ actor SessionStore {
     }
 
     private func processOpencodeServerPortReceived(sessionId: String, port: Int, version: String?, pid: Int?) {
+        // port 0/negative signals "no HTTP server" (TUI mode without --port).
+        // Ignore so sessions never bind to a fake port.
+        guard port > 0 else {
+            writeDebugLogAsync("[opencode-server] serverPort ignored (no server, port=\(port)) pid=\(pid ?? -1)")
+            return
+        }
         if let version, !version.isEmpty {
             opencodePluginVersion = version
             opencodePluginVersionSubject.send(version)

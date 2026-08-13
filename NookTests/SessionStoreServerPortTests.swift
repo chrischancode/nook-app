@@ -36,4 +36,22 @@ final class SessionStoreServerPortTests: XCTestCase {
         let a = await store.session(for: "A")
         XCTAssertEqual(a?.serverPort, 4096)
     }
+
+    /// port=0 表示当前实例无 HTTP server（TUI 模式无 --port），不得写入映射。
+    func testServerPortZeroIgnoredDoesNotLeak() async {
+        let store = SessionStore.shared
+        await store.resetForTesting()
+
+        await store.process(.opencodeSessionStarted(sessionId: "A", cwd: "/tmp/proj-a"))
+        await store.setSessionPidForTesting(sessionId: "A", pid: 100)
+        await store.process(.opencodeServerPortReceived(sessionId: "?", port: 0, version: nil, pid: 100))
+
+        let a = await store.session(for: "A")
+        XCTAssertNil(a?.serverPort)
+
+        // 后续真实端口正常接收
+        await store.process(.opencodeServerPortReceived(sessionId: "?", port: 55123, version: nil, pid: 100))
+        guard let a2 = await store.session(for: "A") else { return XCTFail("session A gone") }
+        XCTAssertEqual(a2.serverPort, 55123)
+    }
 }

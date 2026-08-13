@@ -735,6 +735,12 @@ final class OpencodeHookAdapter: @unchecked Sendable {
             Self.logNotice("→ serverPort dropped (no port) session=\(sessionId)")
             return []
         }
+        // port 0 signals "no HTTP server" (TUI mode without --port) — do not
+        // treat it as a real server, otherwise sessions bind to a fake port.
+        guard port > 0 else {
+            Self.logNotice("→ serverPort dropped (no server, port=0) session=\(sessionId)")
+            return []
+        }
         let version = props["version"]?.value as? String
         let pid = (props["pid"]?.value as? Int) ?? Int(props["pid"]?.value as? String ?? "")
         let cwd: String = {

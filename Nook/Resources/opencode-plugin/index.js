@@ -124,7 +124,7 @@ async function handleCommand(rawLine, input) {
 /// opencode calls `server(input, options)` directly with the plugin input
 /// (including `client`). We capture `input` in the closure so the command
 /// socket handler can use it later for permission replies.
-const PLUGIN_VERSION = "1.2.0";
+const PLUGIN_VERSION = "1.3.0";
 export default function server(input) {
   logDebug(`nook plugin v${PLUGIN_VERSION} loaded serverUrl=${input?.serverUrl?.toString() ?? "undefined"}`);
   // Start listening for commands from Nook as soon as the plugin loads.
@@ -134,11 +134,16 @@ export default function server(input) {
   // serverUrl is set after the HTTP server starts, so it may be undefined briefly.
   // URL.port returns a string (e.g. "4096") — coerce to a number so Nook's
   // Int parsing doesn't drop the event.
+  // Returns null when opencode is running without a real HTTP server
+  // (TUI mode without --port). Callers must treat null as "no server".
   const getServerPort = () => {
     try {
-      return Number(input?.serverUrl?.port ?? 4096) || 4096;
+      const raw = input?.serverUrl?.port;
+      if (raw === undefined || raw === null || raw === "") return null;
+      const port = Number(raw);
+      return Number.isFinite(port) && port > 0 ? port : null;
     } catch {
-      return 4096;
+      return null;
     }
   };
 
@@ -150,11 +155,13 @@ export default function server(input) {
     if (retryCount >= maxRetries) return;
     retryCount++;
     const port = getServerPort();
-    logDebug(`sending serverPort=${port} (attempt ${retryCount})`);
+    // port 0 signals "no HTTP server" so Nook doesn't treat it as real.
+    const reportedPort = port ?? 0;
+    logDebug(`sending serverPort=${reportedPort}${port === null ? " (no serverUrl)" : ""} (attempt ${retryCount})`);
     send({
       origin: "opencode",
       type: "serverPort",
-      properties: { port, pid: INSTANCE_PID },
+      properties: { port: reportedPort, pid: INSTANCE_PID },
     }).then(() => {
       if (retryCount < maxRetries) {
         setTimeout(sendServerPort, 2000);
