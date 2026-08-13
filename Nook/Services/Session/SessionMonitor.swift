@@ -115,8 +115,8 @@ class SessionMonitor: ObservableObject {
                         await SessionStore.shared.process(.opencodeStopped(sessionId: sessionId, cwd: cwd))
                     case .permissionAsked(let sessionId, let cwd, let requestId, let toolName, let toolUseId, let input, let inputSummary, let alwaysPatterns):
                         await SessionStore.shared.process(.opencodePermissionRequested(sessionId: sessionId, cwd: cwd, permission: toolName, requestId: requestId, toolUseId: toolUseId, input: input, inputSummary: inputSummary, alwaysPatterns: alwaysPatterns))
-                    case .serverPortReceived(let sessionId, let port, let version):
-                        await SessionStore.shared.process(.opencodeServerPortReceived(sessionId: sessionId, port: port, version: version))
+                    case .serverPortReceived(let sessionId, let port, let version, let pid):
+                        await SessionStore.shared.process(.opencodeServerPortReceived(sessionId: sessionId, port: port, version: version, pid: pid))
                     case .subagentStarted(let sessionId, let taskToolId):
                         // sessionId is already the parent's — the adapter
                         // rewrites child session ids before emitting.

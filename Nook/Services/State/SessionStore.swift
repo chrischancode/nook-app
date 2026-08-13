@@ -196,8 +196,8 @@ actor SessionStore {
         case .opencodePromptSubmitted(let sessionId, let cwd, let prompt):
             processOpencodePromptSubmitted(sessionId: sessionId, cwd: cwd, prompt: prompt)
 
-        case .opencodeServerPortReceived(let sessionId, let port, let version):
-            processOpencodeServerPortReceived(sessionId: sessionId, port: port, version: version)
+        case .opencodeServerPortReceived(let sessionId, let port, let version, let pid):
+            processOpencodeServerPortReceived(sessionId: sessionId, port: port, version: version, pid: pid)
 
         case .cursorSessionStarted(let sessionId, let cwd):
             registerSession(sessionId: sessionId)
@@ -1116,7 +1116,7 @@ actor SessionStore {
         publishState()
     }
 
-    private func processOpencodeServerPortReceived(sessionId: String, port: Int, version: String?) {
+    private func processOpencodeServerPortReceived(sessionId: String, port: Int, version: String?, pid: Int?) {
         // Plugin sends sessionId: "?" at startup — store port globally and
         // apply to all existing OpenCode sessions that don't have a port yet.
         if let version, !version.isEmpty {
