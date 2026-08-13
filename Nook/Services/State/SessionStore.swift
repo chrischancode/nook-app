@@ -41,8 +41,11 @@ actor SessionStore {
     private var pendingCodexStartupSessions: Set<String> = []
     private var ignoredCodexSessions: Set<String> = []
 
-    /// OpenCode server port received from plugin. Applied to all OpenCode sessions.
-    private var opencodeServerPort: Int?
+    /// pid → server port, for multi-instance opencode. Sessions bind their
+    /// serverPort from the pid that enrichOpencodeRuntimeMetadata resolves.
+    private var opencodeServerPorts: [Int: Int] = [:]
+    /// Legacy fallback: port from a plugin that reports no pid, or from probe.
+    private var opencodeServerPortFallback: Int?
 
     /// Running OpenCode plugin version, reported by the plugin in the serverPort
     /// handshake. Used to detect when OpenCode is still running a stale plugin
@@ -886,7 +889,7 @@ actor SessionStore {
             provider: .opencode,
             cwd: cwd,
             projectName: URL(fileURLWithPath: cwd).lastPathComponent,
-            serverPort: opencodeServerPort,
+            serverPort: nil,
             phase: .idle
         )
     }
@@ -942,7 +945,7 @@ actor SessionStore {
 
         // Probe OpenCode server port if not yet known (plugin's serverPort
         // event may have been lost due to race with socket connection).
-        if session.serverPort == nil && opencodeServerPort == nil {
+        if session.serverPort == nil && opencodeServerPortFallback == nil && opencodeServerPorts.isEmpty {
             Task { await probeOpencodeServerPort() }
         }
 
@@ -957,7 +960,7 @@ actor SessionStore {
         var session = sessions[sessionId] ?? createOpencodeSession(sessionId: sessionId, cwd: cwd)
 
         // Retry probe if server port still unknown (plugin event may arrive late).
-        if session.serverPort == nil && opencodeServerPort == nil {
+        if session.serverPort == nil && opencodeServerPortFallback == nil && opencodeServerPorts.isEmpty {
             Task { await probeOpencodeServerPort() }
         }
         enrichOpencodeRuntimeMetadata(session: &session)
@@ -1090,7 +1093,7 @@ actor SessionStore {
     /// Note: OpenCode in TUI mode (tmux) has no HTTP server — this only works
     /// for `opencode serve` mode. TUI sessions should use tmux send-keys.
     private func probeOpencodeServerPort() async {
-        guard opencodeServerPort == nil else { return }
+        guard opencodeServerPortFallback == nil && opencodeServerPorts.isEmpty else { return }
         let ports = [4096, 4097, 4098]
         for port in ports {
             guard let url = URL(string: "http://127.0.0.1:\(port)/global/health") else { continue }
@@ -1099,16 +1102,17 @@ actor SessionStore {
             if let (_, response) = try? await URLSession.shared.data(for: request),
                let http = response as? HTTPURLResponse, http.statusCode == 200 {
                 writeDebugLogAsync("[opencode-server] probe OK port=\(port)")
-                applyOpencodeServerPort(port)
+                applyOpencodeFallbackPort(port)
                 return
             }
         }
         writeDebugLogAsync("[opencode-server] probe FAILED (TUI mode or no server)")
     }
 
-    /// Apply discovered port to global state and all OpenCode sessions.
-    private func applyOpencodeServerPort(_ port: Int) {
-        opencodeServerPort = port
+    /// Legacy plugin / probe path: write global fallback and backfill all
+    /// opencode sessions that don't have a port yet.
+    private func applyOpencodeFallbackPort(_ port: Int) {
+        opencodeServerPortFallback = port
         for (id, var session) in sessions where session.provider == .opencode && session.serverPort == nil {
             session.serverPort = port
             sessions[id] = session
@@ -1117,25 +1121,26 @@ actor SessionStore {
     }
 
     private func processOpencodeServerPortReceived(sessionId: String, port: Int, version: String?, pid: Int?) {
-        // Plugin sends sessionId: "?" at startup — store port globally and
-        // apply to all existing OpenCode sessions that don't have a port yet.
         if let version, !version.isEmpty {
             opencodePluginVersion = version
             opencodePluginVersionSubject.send(version)
         }
-        if sessionId == "?" || !registeredSessionIds.contains(sessionId) {
-            opencodeServerPort = port
-            for (id, var session) in sessions where session.provider == .opencode && session.serverPort == nil {
-                session.serverPort = port
-                sessions[id] = session
-            }
-            publishState()
+        guard let pid else {
+            // Legacy plugin (no pid) or "?" broadcast: global fallback
+            applyOpencodeFallbackPort(port)
             return
         }
-        registerSession(sessionId: sessionId)
-        var session = sessions[sessionId] ?? createOpencodeSession(sessionId: sessionId, cwd: "")
-        session.serverPort = port
-        sessions[sessionId] = session
+        // Precise instance binding: override whatever fallback/probe assigned,
+        // so each session's serverPort tracks its own pid authoritatively.
+        opencodeServerPorts[pid] = port
+        for (id, var session) in sessions where session.provider == .opencode {
+            if session.pid == pid {
+                session.serverPort = port
+            } else if let sessionPid = session.pid, let known = opencodeServerPorts[sessionPid] {
+                session.serverPort = known
+            }
+            sessions[id] = session
+        }
         publishState()
     }
 
@@ -1465,6 +1470,9 @@ actor SessionStore {
         session.pid = process.pid
         session.tty = process.tty
         session.isInTmux = ProcessTreeBuilder.shared.isInTmux(pid: process.pid, tree: tree)
+        if let port = opencodeServerPorts[process.pid] {
+            session.serverPort = port
+        }
     }
 
     /// Find the most likely OpenCode parent process for the given working directory.
