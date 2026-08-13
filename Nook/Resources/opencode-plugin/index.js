@@ -6,14 +6,18 @@ const SOCKET_PATH = "/tmp/nook.sock";
 
 /// Path to the command socket — Nook connects here to send commands
 /// (e.g. permission replies) back to the plugin.
-const COMMAND_SOCKET_PATH = "/tmp/nook-command.sock";
+/// Pid-scoped so multiple opencode instances don't contend for a single
+/// socket (kernel load-balances new connections across listeners, so a
+/// reply could land on the wrong instance → PermissionNotFoundError).
+const INSTANCE_PID = process.pid;
+const COMMAND_SOCKET_PATH = `/tmp/nook-command-${INSTANCE_PID}.sock`;
 
 /// Debug log for plugin-side troubleshooting.
 const DEBUG_LOG = "/tmp/nook-plugin-debug.log";
 
 function logDebug(message) {
   try {
-    fs.appendFileSync(DEBUG_LOG, `[${new Date().toISOString()}] ${message}\n`);
+    fs.appendFileSync(DEBUG_LOG, `[${new Date().toISOString()}] pid=${INSTANCE_PID} ${message}\n`);
   } catch {}
 }
 
@@ -43,6 +47,11 @@ function startCommandServer(input) {
     // Clean up any stale socket from a previous run.
     try { fs.unlinkSync(COMMAND_SOCKET_PATH); } catch {}
   } catch {}
+
+  // Remove our pid-scoped socket on exit so /tmp doesn't accumulate.
+  process.on("exit", () => {
+    try { fs.unlinkSync(COMMAND_SOCKET_PATH); } catch {}
+  });
 
   const server = net.createServer((socket) => {
     let buffer = "";
@@ -115,7 +124,7 @@ async function handleCommand(rawLine, input) {
 /// opencode calls `server(input, options)` directly with the plugin input
 /// (including `client`). We capture `input` in the closure so the command
 /// socket handler can use it later for permission replies.
-const PLUGIN_VERSION = "1.1.0";
+const PLUGIN_VERSION = "1.2.0";
 export default function server(input) {
   logDebug(`nook plugin v${PLUGIN_VERSION} loaded serverUrl=${input?.serverUrl?.toString() ?? "undefined"}`);
   // Start listening for commands from Nook as soon as the plugin loads.
@@ -145,7 +154,7 @@ export default function server(input) {
     send({
       origin: "opencode",
       type: "serverPort",
-      properties: { port },
+      properties: { port, pid: INSTANCE_PID },
     }).then(() => {
       if (retryCount < maxRetries) {
         setTimeout(sendServerPort, 2000);
@@ -158,12 +167,17 @@ export default function server(input) {
   return {
     event: async ({ event }) => {
       if (event.type === "permission.asked") {
-        logDebug(`permission.asked props=${JSON.stringify(event.properties)}`);
+        logDebug(`permission.asked pid=${INSTANCE_PID} props=${JSON.stringify(event.properties)}`);
       }
+      // Merge pid into forwarded properties so Nook can route per-instance
+      // (permission replies, serverPort association).
+      const props = (typeof event.properties === "object" && event.properties !== null)
+        ? { ...event.properties, pid: INSTANCE_PID }
+        : { pid: INSTANCE_PID };
       await send({
         origin: "opencode",
         type: event.type,
-        properties: event.properties,
+        properties: props,
       });
     },
   };
