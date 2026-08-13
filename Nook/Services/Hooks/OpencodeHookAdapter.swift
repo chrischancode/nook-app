@@ -84,6 +84,8 @@ final class OpencodeHookAdapter: @unchecked Sendable {
 
     /// sessionID → cwd from session.created / session.updated
     private static var sessionCwd: [String: String] = [:]
+    /// sessionID → Date when session was last stopped (to avoid re-creation on race conditions)
+    private static var recentlyStoppedSessions: [String: Date] = [:]
     /// sessionID → messageID of the most recent user message awaiting its text part
     private static var latestUserMsgID: [String: String] = [:]
     /// messageID → accumulating assistant text (from message.part.delta chunks,
@@ -507,13 +509,16 @@ final class OpencodeHookAdapter: @unchecked Sendable {
         lock.lock()
         let isNew = sessionCwd[sessionId] == nil
         sessionCwd[sessionId] = cwd
+        // Track when we last saw this session idle/stopped to avoid re-creating
+        // it when a late-arriving session.updated races with session.idle.
+        let recentlyStopped = recentlyStoppedSessions[sessionId] != nil
         lock.unlock()
 
-        if isNew {
+        if isNew && !recentlyStopped {
             Self.logNotice("→ sessionStart (first sighting) session=\(sessionId) cwd=\(cwd)")
             return [.sessionStart(sessionId: sessionId, cwd: cwd)]
         }
-        Self.logNotice("→ session.updated (known) session=\(sessionId) cwd=\(cwd)")
+        Self.logNotice("→ session.updated (known) session=\(sessionId) cwd=\(cwd) recentlyStopped=\(recentlyStopped)")
         return []
     }
 
@@ -560,6 +565,11 @@ final class OpencodeHookAdapter: @unchecked Sendable {
             lock.unlock()
             return v
         }()
+        // Mark session as recently stopped to prevent re-creation if session.updated
+        // arrives after session.idle (race condition).
+        lock.lock()
+        recentlyStoppedSessions[sessionId] = Date()
+        lock.unlock()
         cleanupState(forSession: sessionId)
         Self.logNotice("→ stop (legacy session.idle) session=\(sessionId)")
         return [.stop(sessionId: sessionId, cwd: cwd)]
@@ -594,6 +604,9 @@ final class OpencodeHookAdapter: @unchecked Sendable {
             reasoningFinalizedMessageIds.remove(messageId)
             consumedUserMessageIDs.remove(messageId)
         }
+        // Clean up old recently stopped entries (older than 30 seconds)
+        let cutoff = Date().addingTimeInterval(-30)
+        recentlyStoppedSessions = recentlyStoppedSessions.filter { $0.value > cutoff }
         lock.unlock()
         if !messagesToRemove.isEmpty {
             Self.logNotice("→ cleanup session=\(sessionId) messages=\(messagesToRemove.count)")
