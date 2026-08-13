@@ -67,6 +67,11 @@ enum SessionEvent: Sendable {
     /// reply via the plugin's command socket using the `requestId` carried here.
     case opencodePermissionRequested(sessionId: String, cwd: String, permission: String, requestId: String, toolUseId: String?, input: [String: String], inputSummary: String?, alwaysPatterns: [String])
 
+    /// OpenCode server port received from plugin. Used for HTTP API communication.
+    /// `version` is the running plugin version reported by OpenCode, used to detect
+    /// stale plugin loads.
+    case opencodeServerPortReceived(sessionId: String, port: Int, version: String?)
+
     /// Cursor composer conversation was created or resumed
     case cursorSessionStarted(sessionId: String, cwd: String)
 
@@ -310,6 +315,8 @@ extension SessionEvent: CustomStringConvertible {
             return "opencodeStopped(session: \(sessionId.prefix(8)))"
         case .opencodePermissionRequested(let sessionId, _, let permission, let requestId, _, _, _, _):
             return "opencodePermissionRequested(session: \(sessionId.prefix(8)), permission: \(permission), requestId: \(requestId.prefix(12)))"
+        case .opencodeServerPortReceived(let sessionId, let port, let version):
+            return "opencodeServerPortReceived(session: \(sessionId.prefix(8)), port: \(port), version: \(version ?? "-"))"
         case .cursorSessionStarted(let sessionId, _):
             return "cursorSessionStarted(session: \(sessionId.prefix(8)))"
         case .cursorProcessingStarted(let sessionId, _):

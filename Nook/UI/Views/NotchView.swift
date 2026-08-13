@@ -874,6 +874,7 @@ struct NotchView: View {
                 )
             case .agents:
                 AgentSettingsView(
+                    sessionMonitor: sessionMonitor,
                     viewModel: viewModel,
                     primaryTextColor: expandedPrimaryTextColor,
                     secondaryTextColor: expandedSecondaryTextColor,

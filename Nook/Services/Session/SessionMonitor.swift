@@ -16,6 +16,8 @@ class SessionMonitor: ObservableObject {
     @Published var instances: [SessionState] = []
     @Published var pendingInstances: [SessionState] = []
     @Published var completionNotification: SessionCompletionNotification?
+    /// Running OpenCode plugin version (nil until the plugin handshake).
+    @Published var opencodePluginVersion: String?
 
     private nonisolated static let codexHookEventQueue = AsyncHookEventQueue()
     private static let logger = Logger(subsystem: "com.celestial.Nook", category: "SessionMonitor")
@@ -34,6 +36,13 @@ class SessionMonitor: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
                 self?.completionNotification = notification
+            }
+            .store(in: &cancellables)
+
+        SessionStore.shared.opencodePluginVersionPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] version in
+                self?.opencodePluginVersion = version
             }
             .store(in: &cancellables)
 
@@ -106,6 +115,8 @@ class SessionMonitor: ObservableObject {
                         await SessionStore.shared.process(.opencodeStopped(sessionId: sessionId, cwd: cwd))
                     case .permissionAsked(let sessionId, let cwd, let requestId, let toolName, let toolUseId, let input, let inputSummary, let alwaysPatterns):
                         await SessionStore.shared.process(.opencodePermissionRequested(sessionId: sessionId, cwd: cwd, permission: toolName, requestId: requestId, toolUseId: toolUseId, input: input, inputSummary: inputSummary, alwaysPatterns: alwaysPatterns))
+                    case .serverPortReceived(let sessionId, let port, let version):
+                        await SessionStore.shared.process(.opencodeServerPortReceived(sessionId: sessionId, port: port, version: version))
                     case .subagentStarted(let sessionId, let taskToolId):
                         // sessionId is already the parent's — the adapter
                         // rewrites child session ids before emitting.

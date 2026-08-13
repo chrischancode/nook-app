@@ -115,9 +115,45 @@ async function handleCommand(rawLine, input) {
 /// opencode calls `server(input, options)` directly with the plugin input
 /// (including `client`). We capture `input` in the closure so the command
 /// socket handler can use it later for permission replies.
+const PLUGIN_VERSION = "1.1.0";
 export default function server(input) {
+  logDebug(`nook plugin v${PLUGIN_VERSION} loaded serverUrl=${input?.serverUrl?.toString() ?? "undefined"}`);
   // Start listening for commands from Nook as soon as the plugin loads.
   startCommandServer(input);
+
+  // Get the actual server port from input.serverUrl (provided by OpenCode).
+  // serverUrl is set after the HTTP server starts, so it may be undefined briefly.
+  // URL.port returns a string (e.g. "4096") — coerce to a number so Nook's
+  // Int parsing doesn't drop the event.
+  const getServerPort = () => {
+    try {
+      return Number(input?.serverUrl?.port ?? 4096) || 4096;
+    } catch {
+      return 4096;
+    }
+  };
+
+  // Send server port to Nook. Retry until Nook's socket is ready.
+  // Nook might not be listening on /tmp/nook.sock when the plugin first loads.
+  let retryCount = 0;
+  const maxRetries = 30; // 30 * 2s = 60s
+  const sendServerPort = () => {
+    if (retryCount >= maxRetries) return;
+    retryCount++;
+    const port = getServerPort();
+    logDebug(`sending serverPort=${port} (attempt ${retryCount})`);
+    send({
+      origin: "opencode",
+      type: "serverPort",
+      properties: { port },
+    }).then(() => {
+      if (retryCount < maxRetries) {
+        setTimeout(sendServerPort, 2000);
+      }
+    });
+  };
+  // Initial attempt + retries every 2s
+  sendServerPort();
 
   return {
     event: async ({ event }) => {

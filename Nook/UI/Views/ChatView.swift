@@ -290,7 +290,16 @@ struct ChatView: View {
     private var chatInputPlaceholder: String {
         let name = session.provider.displayName
         if canSendMessages {
-            return "Message to \(name)... (⏎ send · ⌃F/⌃B scroll · ⌃G bottom)"
+            switch session.provider {
+            case .opencode:
+                if session.serverPort != nil {
+                    return "Message to \(name) via server... (⏎ send · ⌃F/⌃B scroll · ⌃G bottom)"
+                } else {
+                    return "Message to \(name) via tmux... (⏎ send · ⌃F/⌃B scroll · ⌃G bottom)"
+                }
+            case .claude, .codex, .cursor:
+                return "Message to \(name)... (⏎ send · ⌃F/⌃B scroll · ⌃G bottom)"
+            }
         } else {
             return "Open \(name) in tmux to enable messaging"
         }
@@ -441,9 +450,16 @@ struct ChatView: View {
 
     // MARK: - Input Bar
 
-    /// Can send messages only if session is in tmux
+    /// Can send messages via tmux or server API (OpenCode only)
     private var canSendMessages: Bool {
-        session.isInTmux && session.tty != nil
+        switch session.provider {
+        case .opencode:
+            // OpenCode: tmux or server API
+            return (session.isInTmux && session.tty != nil) || session.serverPort != nil
+        case .claude, .codex, .cursor:
+            // Other providers: tmux only
+            return session.isInTmux && session.tty != nil
+        }
     }
 
     private var inputBar: some View {
@@ -733,6 +749,47 @@ struct ChatView: View {
     }
 
     private func sendToSession(_ text: String) async {
+        switch session.provider {
+        case .opencode:
+            await sendToOpenCode(text)
+        case .claude, .codex, .cursor:
+            await sendToTmux(text)
+        }
+    }
+
+    private func sendToOpenCode(_ text: String) async {
+        // 优先 tmux（OpenCode TUI 模式下唯一可靠的通道）
+        if session.isInTmux, let tty = session.tty,
+           let target = await findTmuxTarget(tty: tty) {
+            DebugLog.shared.write("[ChatView] send via tmux target=\(target) session=\(session.sessionId.prefix(12))")
+            _ = await ToolApprovalHandler.shared.sendMessage(text, to: target)
+            return
+        }
+
+        // fallback: server HTTP API（仅 opencode serve 模式）
+        guard let port = session.serverPort else {
+            DebugLog.shared.write("[ChatView] send FAILED: no tmux and no serverPort session=\(session.sessionId.prefix(12))")
+            return
+        }
+        DebugLog.shared.write("[ChatView] send via server API port=\(port) session=\(session.sessionId.prefix(12))")
+        await sendViaServerAPI(text: text, port: port)
+    }
+
+    private func sendViaServerAPI(text: String, port: Int) async {
+        let url = URL(string: "http://127.0.0.1:\(port)/session/\(session.sessionId)/message")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "parts": [["type": "text", "text": text]]
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
+    private func sendToTmux(_ text: String) async {
         guard session.isInTmux else { return }
         guard let tty = session.tty else { return }
 

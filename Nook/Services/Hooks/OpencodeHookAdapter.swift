@@ -276,6 +276,8 @@ final class OpencodeHookAdapter: @unchecked Sendable {
             return handleQuestionAsked(props)
         case "permission.asked":
             return handlePermissionAsked(props)
+        case "serverPort":
+            return handleServerPort(props, sessionId: sessionId)
         case "message.updated":
             return handleMessageUpdated(props)
         case "message.part.updated":
@@ -712,6 +714,23 @@ final class OpencodeHookAdapter: @unchecked Sendable {
             input: inputMap, inputSummary: inputSummary,
             alwaysPatterns: alwaysPatterns
         )]
+    }
+
+    private static func handleServerPort(_ props: [String: AnyCodable], sessionId: String) -> [OpencodeSessionEvent] {
+        // Plugin may send the port as a number or a string (URL.port is a string).
+        guard let raw = props["port"]?.value, let port = (raw as? Int) ?? Int(raw as? String ?? "") else {
+            Self.logNotice("→ serverPort dropped (no port) session=\(sessionId)")
+            return []
+        }
+        let version = props["version"]?.value as? String
+        let cwd: String = {
+            lock.lock()
+            let v = sessionCwd[sessionId] ?? ""
+            lock.unlock()
+            return v
+        }()
+        Self.logNotice("→ serverPort session=\(sessionId) port=\(port) version=\(version ?? "-")")
+        return [.serverPortReceived(sessionId: sessionId, port: port, version: version)]
     }
 
     // MARK: - Message Handlers

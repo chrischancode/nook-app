@@ -41,6 +41,14 @@ actor SessionStore {
     private var pendingCodexStartupSessions: Set<String> = []
     private var ignoredCodexSessions: Set<String> = []
 
+    /// OpenCode server port received from plugin. Applied to all OpenCode sessions.
+    private var opencodeServerPort: Int?
+
+    /// Running OpenCode plugin version, reported by the plugin in the serverPort
+    /// handshake. Used to detect when OpenCode is still running a stale plugin
+    /// (running version != installed version in the settings UI).
+    private var opencodePluginVersion: String?
+
     /// Sync debounce interval (100ms)
     private let syncDebounceNs: UInt64 = 100_000_000
 
@@ -91,6 +99,9 @@ actor SessionStore {
     /// One-shot completion notifications for UI affordances like sound/bounce.
     private nonisolated(unsafe) let completionNotificationsSubject = PassthroughSubject<SessionCompletionNotification, Never>()
 
+    /// Current running OpenCode plugin version (nil until the plugin handshake).
+    private nonisolated(unsafe) let opencodePluginVersionSubject = CurrentValueSubject<String?, Never>(nil)
+
     /// Public publisher for UI subscription
     nonisolated var sessionsPublisher: AnyPublisher<[SessionState], Never> {
         sessionsSubject.eraseToAnyPublisher()
@@ -99,6 +110,11 @@ actor SessionStore {
     /// Public completion notification stream for UI-only affordances.
     nonisolated var completionNotificationsPublisher: AnyPublisher<SessionCompletionNotification, Never> {
         completionNotificationsSubject.eraseToAnyPublisher()
+    }
+
+    /// Current running OpenCode plugin version stream (nil until known).
+    nonisolated var opencodePluginVersionPublisher: AnyPublisher<String?, Never> {
+        opencodePluginVersionSubject.eraseToAnyPublisher()
     }
 
     private nonisolated var mixpanel: MixpanelInstance? {
@@ -179,6 +195,9 @@ actor SessionStore {
 
         case .opencodePromptSubmitted(let sessionId, let cwd, let prompt):
             processOpencodePromptSubmitted(sessionId: sessionId, cwd: cwd, prompt: prompt)
+
+        case .opencodeServerPortReceived(let sessionId, let port, let version):
+            processOpencodeServerPortReceived(sessionId: sessionId, port: port, version: version)
 
         case .cursorSessionStarted(let sessionId, let cwd):
             registerSession(sessionId: sessionId)
@@ -867,6 +886,7 @@ actor SessionStore {
             provider: .opencode,
             cwd: cwd,
             projectName: URL(fileURLWithPath: cwd).lastPathComponent,
+            serverPort: opencodeServerPort,
             phase: .idle
         )
     }
@@ -919,6 +939,13 @@ actor SessionStore {
         if isNewSession {
             mixpanel?.track(event: "Session Started", properties: ["provider": "opencode"])
         }
+
+        // Probe OpenCode server port if not yet known (plugin's serverPort
+        // event may have been lost due to race with socket connection).
+        if session.serverPort == nil && opencodeServerPort == nil {
+            Task { await probeOpencodeServerPort() }
+        }
+
         publishState()
     }
 
@@ -928,6 +955,11 @@ actor SessionStore {
             return
         }
         var session = sessions[sessionId] ?? createOpencodeSession(sessionId: sessionId, cwd: cwd)
+
+        // Retry probe if server port still unknown (plugin event may arrive late).
+        if session.serverPort == nil && opencodeServerPort == nil {
+            Task { await probeOpencodeServerPort() }
+        }
         enrichOpencodeRuntimeMetadata(session: &session)
         session.lastActivity = Date()
         session.completionNotificationAt = nil
@@ -1051,6 +1083,59 @@ actor SessionStore {
             mutation: .insert, provider: .opencode
         )
         applyChatItemUpdate(update, appliesLifecycleEffects: true)
+        publishState()
+    }
+
+    /// Probe common OpenCode server ports to discover a running server.
+    /// Note: OpenCode in TUI mode (tmux) has no HTTP server — this only works
+    /// for `opencode serve` mode. TUI sessions should use tmux send-keys.
+    private func probeOpencodeServerPort() async {
+        guard opencodeServerPort == nil else { return }
+        let ports = [4096, 4097, 4098]
+        for port in ports {
+            guard let url = URL(string: "http://127.0.0.1:\(port)/global/health") else { continue }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 1
+            if let (_, response) = try? await URLSession.shared.data(for: request),
+               let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                writeDebugLogAsync("[opencode-server] probe OK port=\(port)")
+                applyOpencodeServerPort(port)
+                return
+            }
+        }
+        writeDebugLogAsync("[opencode-server] probe FAILED (TUI mode or no server)")
+    }
+
+    /// Apply discovered port to global state and all OpenCode sessions.
+    private func applyOpencodeServerPort(_ port: Int) {
+        opencodeServerPort = port
+        for (id, var session) in sessions where session.provider == .opencode && session.serverPort == nil {
+            session.serverPort = port
+            sessions[id] = session
+        }
+        publishState()
+    }
+
+    private func processOpencodeServerPortReceived(sessionId: String, port: Int, version: String?) {
+        // Plugin sends sessionId: "?" at startup — store port globally and
+        // apply to all existing OpenCode sessions that don't have a port yet.
+        if let version, !version.isEmpty {
+            opencodePluginVersion = version
+            opencodePluginVersionSubject.send(version)
+        }
+        if sessionId == "?" || !registeredSessionIds.contains(sessionId) {
+            opencodeServerPort = port
+            for (id, var session) in sessions where session.provider == .opencode && session.serverPort == nil {
+                session.serverPort = port
+                sessions[id] = session
+            }
+            publishState()
+            return
+        }
+        registerSession(sessionId: sessionId)
+        var session = sessions[sessionId] ?? createOpencodeSession(sessionId: sessionId, cwd: "")
+        session.serverPort = port
+        sessions[sessionId] = session
         publishState()
     }
 
