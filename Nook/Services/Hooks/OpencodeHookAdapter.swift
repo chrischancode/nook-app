@@ -736,14 +736,15 @@ final class OpencodeHookAdapter: @unchecked Sendable {
             return []
         }
         let version = props["version"]?.value as? String
+        let pid = (props["pid"]?.value as? Int) ?? Int(props["pid"]?.value as? String ?? "")
         let cwd: String = {
             lock.lock()
             let v = sessionCwd[sessionId] ?? ""
             lock.unlock()
             return v
         }()
-        Self.logNotice("→ serverPort session=\(sessionId) port=\(port) version=\(version ?? "-")")
-        return [.serverPortReceived(sessionId: sessionId, port: port, version: version)]
+        Self.logNotice("→ serverPort session=\(sessionId) port=\(port) pid=\(pid ?? -1) version=\(version ?? "-")")
+        return [.serverPortReceived(sessionId: sessionId, port: port, version: version, pid: pid)]
     }
 
     // MARK: - Message Handlers
