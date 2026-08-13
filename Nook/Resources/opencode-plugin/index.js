@@ -126,9 +126,29 @@ async function handleCommand(rawLine, input) {
 /// socket handler can use it later for permission replies.
 const PLUGIN_VERSION = "1.3.0";
 export default function server(input) {
-  logDebug(`nook plugin v${PLUGIN_VERSION} loaded serverUrl=${input?.serverUrl?.toString() ?? "undefined"}`);
+  logDebug(`nook plugin v${PLUGIN_VERSION} loaded serverUrl=${input?.serverUrl?.toString() ?? "undefined"} argv=${JSON.stringify(process.argv ?? [])}`);
   // Start listening for commands from Nook as soon as the plugin loads.
   startCommandServer(input);
+
+  // Mirror opencode's own "external server" detection (tui.ts:233-249):
+  // a real TCP listener exists only when --port/--hostname/--mdns is given.
+  // Without those flags opencode uses an in-process transport and binds
+  // nothing; PluginInput.serverUrl then fabricates http://localhost:4096
+  // (opencode issue #39561), so the URL alone is not a reliable signal.
+  // Fall back on serverUrl.hostname as a sanity check for the common
+  // `opencode --port` case (default hostname 127.0.0.1).
+  const hasExternalServer = () => {
+    try {
+      const argv = process.argv ?? [];
+      if (argv.includes("--port") || argv.includes("--hostname") || argv.includes("--mdns")) {
+        return true;
+      }
+      const host = input?.serverUrl?.hostname;
+      return !!host && host !== "localhost" && host !== "opencode.internal";
+    } catch {
+      return false;
+    }
+  };
 
   // Get the actual server port from input.serverUrl (provided by OpenCode).
   // serverUrl is set after the HTTP server starts, so it may be undefined briefly.
@@ -138,6 +158,7 @@ export default function server(input) {
   // (TUI mode without --port). Callers must treat null as "no server".
   const getServerPort = () => {
     try {
+      if (!hasExternalServer()) return null;
       const raw = input?.serverUrl?.port;
       if (raw === undefined || raw === null || raw === "") return null;
       const port = Number(raw);
