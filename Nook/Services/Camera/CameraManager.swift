@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreImage
 import SwiftUI
+import Combine
 
 class CameraManager: NSObject, ObservableObject {
     static let shared = CameraManager()

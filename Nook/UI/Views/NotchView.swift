@@ -3,12 +3,12 @@
 //  Nook
 //
 //  The main dynamic island SwiftUI view with accurate notch shape
-//
-
 import AppKit
 import Combine
 import CoreGraphics
 import SwiftUI
+import ServiceManagement
+import UniformTypeIdentifiers
 
 // Corner radius constants
 private let cornerRadiusInsets = (
