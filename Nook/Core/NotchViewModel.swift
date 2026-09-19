@@ -99,9 +99,13 @@ class NotchViewModel: ObservableObject {
     @Published var instancesPageSessionCount: Int = 0
     @Published var instancesPageShowsPerformance: Bool = false
     @Published var instancesPageShowsMusic: Bool = false
+    @Published var instancesPageShowsPomodoro: Bool = false
+    @Published var instancesPageShowsCamera: Bool = false
     @Published var instancesPageRowHeight: CGFloat = 0
     @Published var instancesPagePerformanceRowHeight: CGFloat = 0
     @Published var instancesPageMusicCardHeight: CGFloat = 0
+    @Published var instancesPagePomodoroHeight: CGFloat = 0
+    @Published var instancesPageCameraHeight: CGFloat = 0
     @Published var animatedTopCornerRadius: CGFloat = 6
     @Published var animatedBottomCornerRadius: CGFloat = 12
     /// Extra width beyond device notch for closed state activity indicators (music, processing, etc.)
@@ -306,6 +310,12 @@ class NotchViewModel: ObservableObject {
         let musicBlockHeight: CGFloat = instancesPageShowsMusic
             ? resolvedMusicCardHeight + InstancesPageLayout.contentSpacing
             : 0
+        let pomodoroBlockHeight: CGFloat = instancesPageShowsPomodoro
+            ? resolvedPomodoroHeight + InstancesPageLayout.contentSpacing
+            : 0
+        let cameraBlockHeight: CGFloat = instancesPageShowsCamera
+            ? resolvedCameraHeight + InstancesPageLayout.contentSpacing
+            : 0
 
         let contentHeight: CGFloat
         if instancesPageSessionCount > 0 {
@@ -317,7 +327,7 @@ class NotchViewModel: ObservableObject {
             contentHeight = InstancesPageLayout.emptyStateHeight
         }
 
-        return chromeHeight + performanceBlockHeight + musicBlockHeight + contentHeight
+        return chromeHeight + performanceBlockHeight + musicBlockHeight + pomodoroBlockHeight + cameraBlockHeight + contentHeight
     }
 
     private var resolvedRowHeight: CGFloat {
@@ -326,6 +336,14 @@ class NotchViewModel: ObservableObject {
 
     private var resolvedMusicCardHeight: CGFloat {
         max(instancesPageMusicCardHeight, InstancesPageLayout.fallbackMusicBlockHeight - InstancesPageLayout.contentSpacing)
+    }
+
+    private var resolvedPomodoroHeight: CGFloat {
+        max(instancesPagePomodoroHeight, 58)
+    }
+    
+    private var resolvedCameraHeight: CGFloat {
+        max(instancesPageCameraHeight, 58)
     }
 
     private var resolvedPerformanceRowHeight: CGFloat {
@@ -707,7 +725,7 @@ class NotchViewModel: ObservableObject {
     }
 
     /// Total focusable items in the menu page
-    let menuItemCount: Int = 13
+    let menuItemCount: Int = 14
     /// Total focusable items in the shortcuts page (Back + action rows + Restore)
     var shortcutsItemCount: Int { 1 + ShortcutAction.allCases.count + 1 }
     /// Whether the Claude dir picker inside the Agents page is expanded.

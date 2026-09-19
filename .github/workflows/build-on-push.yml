@@ -1,0 +1,30 @@
+name: Build Nook App
+
+on:
+  push:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Nook
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme Nook -configuration Release \
+            -derivedDataPath build \
+            build
+
+      - name: Compress App
+        run: |
+          cd build/Build/Products/Release
+          zip -r Nook.zip Nook.app
+
+      - name: Upload Nook.zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nook-App
+          path: build/Build/Products/Release/Nook.zip

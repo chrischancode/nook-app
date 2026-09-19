@@ -54,6 +54,8 @@ struct NotchView: View {
     @AppStorage(AppSettings.musicEdgeGlowEnabledKey) private var musicEdgeGlowEnabled = true
     @AppStorage(AppSettings.vibeGlowEnabledKey) private var vibeGlowEnabled = false
     @AppStorage(AppSettings.performanceMonitorEnabledKey) private var performanceMonitorEnabled = true
+    @AppStorage("pomodoroEnabled") private var pomodoroEnabled: Bool = true
+    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
 
     @Namespace private var activityNamespace
 
@@ -260,6 +262,12 @@ struct NotchView: View {
         }
         .onChange(of: performanceMonitorEnabled) { _, isEnabled in
             performanceMonitor.setActive(isEnabled)
+            syncInstancesPageLayoutState()
+        }
+        .onChange(of: pomodoroEnabled) { _, _ in
+            syncInstancesPageLayoutState()
+        }
+        .onChange(of: cameraEnabled) { _, _ in
             syncInstancesPageLayoutState()
         }
         .onChange(of: vibeGlowEnabled) { _, _ in
@@ -520,10 +528,18 @@ struct NotchView: View {
     }
 
     @State private var breathingOpacity: CGFloat = 0.9
+    @State private var isDropTargeted: Bool = false
 
     @ViewBuilder
     private var edgeGlowOverlay: some View {
-        if vibeGlowVisible {
+        if isDropTargeted {
+            NotchShape(
+                topCornerRadius: viewModel.animatedTopCornerRadius,
+                bottomCornerRadius: viewModel.animatedBottomCornerRadius
+            )
+            .stroke(Color.blue.opacity(0.8), lineWidth: 4)
+            .background(Color.blue.opacity(0.1))
+        } else if vibeGlowVisible {
             VibeSurroundGlow(
                 topCornerRadius: viewModel.animatedTopCornerRadius,
                 bottomCornerRadius: viewModel.animatedBottomCornerRadius
@@ -640,6 +656,30 @@ struct NotchView: View {
                     }
                     handleNotchTap()
                 }
+            }
+            .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+                var droppedURLs: [URL] = []
+                let dispatchGroup = DispatchGroup()
+
+                for provider in providers {
+                    dispatchGroup.enter()
+                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                        if let url = url {
+                            DispatchQueue.main.async {
+                                droppedURLs.append(url)
+                            }
+                        }
+                        dispatchGroup.leave()
+                    }
+                }
+
+                dispatchGroup.notify(queue: .main) {
+                    if !droppedURLs.isEmpty {
+                        let service = NSSharingService(named: .sendViaAirDrop)
+                        service?.perform(withItems: droppedURLs)
+                    }
+                }
+                return true
             }
     }
 
@@ -931,6 +971,8 @@ struct NotchView: View {
         viewModel.instancesPageSessionCount = sessionCount
         viewModel.instancesPageShowsPerformance = performanceMonitorEnabled
         viewModel.instancesPageShowsMusic = showsMusic
+        viewModel.instancesPageShowsPomodoro = pomodoroEnabled
+        viewModel.instancesPageShowsCamera = cameraEnabled
     }
 
     // MARK: - Event Handlers

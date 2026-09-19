@@ -291,6 +291,13 @@ struct OpencodeHookInstaller {
     private static func createMinimalConfig() {
         let entry = pluginDir.path
         let content = "{\n  \"plugin\": [\n    \"\(entry)\"\n  ]\n}\n"
+        
+        // Backup existing config if it exists
+        if FileManager.default.fileExists(atPath: configFile.path) {
+            let backupFile = configDir.appendingPathComponent("opencode.json.backup-\(Int(Date().timeIntervalSince1970))")
+            try? FileManager.default.copyItem(at: configFile, to: backupFile)
+        }
+        
         try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
         try? content.write(to: configFile, atomically: true, encoding: .utf8)
     }

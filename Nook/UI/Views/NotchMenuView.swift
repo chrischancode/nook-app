@@ -26,13 +26,15 @@ struct NotchMenuView: View {
     @AppStorage(AppSettings.notchAppearanceStyleKey) private var notchAppearanceStyleRaw = NotchAppearanceStyle.adaptiveArtwork.rawValue
     @AppStorage(AppSettings.musicEdgeGlowEnabledKey) private var musicEdgeGlowEnabled = true
     @AppStorage(AppSettings.vibeGlowEnabledKey) private var vibeGlowEnabled = false
+    @AppStorage("pomodoroEnabled") private var pomodoroEnabled: Bool = true
+    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
 
     /// Compile-time layout for the menu page. 13 visible rows + 5
     /// dividers (Back, divider, Screen, Sound, Agents..., Performance...,
     /// Keyboard..., divider, Appearance, Music Edge, Vibe, divider,
     /// Launch, Accessibility, divider, Star, divider, Quit).
     static var pageLayout: PageLayout {
-        PageLayout(rowCount: 13, dividerCount: 5)
+        PageLayout(rowCount: 15, dividerCount: 5)
     }
 
     /// Total height the menu VStack should report, given which pickers
@@ -176,12 +178,33 @@ struct NotchMenuView: View {
 
                 // System settings
                 MenuToggleRow(
+                    icon: "timer",
+                    label: "Pomodoro Timer",
+                    isOn: pomodoroEnabled,
+                    primaryTextColor: primaryTextColor,
+                    secondaryTextColor: secondaryTextColor,
+                    isFocused: viewModel.settingsFocusedIndex == 9
+                ) {
+                    pomodoroEnabled.toggle()
+                }
+                
+                MenuToggleRow(
+                    icon: "camera",
+                    label: "Camera Mirror",
+                    isOn: cameraEnabled,
+                    primaryTextColor: primaryTextColor,
+                    secondaryTextColor: secondaryTextColor,
+                    isFocused: viewModel.settingsFocusedIndex == 10
+                ) {
+                    cameraEnabled.toggle()
+                }
+                MenuToggleRow(
                     icon: "power",
                     label: "Launch at Login",
                     isOn: launchAtLogin,
                     primaryTextColor: primaryTextColor,
                     secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 9
+                    isFocused: viewModel.settingsFocusedIndex == 11
                 ) {
                     do {
                         if launchAtLogin {
@@ -196,7 +219,7 @@ struct NotchMenuView: View {
                     }
                 }
 
-                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 10)
+                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 12)
 
                 Divider()
                     .background(separatorColor)
@@ -207,7 +230,7 @@ struct NotchMenuView: View {
                     label: "Star on GitHub",
                     trailingLabel: appVersion,
                     primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 11
+                    isFocused: viewModel.settingsFocusedIndex == 13
                 ) {
                     if let url = URL(string: "https://github.com/oa1mgo/nook") {
                         NSWorkspace.shared.open(url)
@@ -224,7 +247,7 @@ struct NotchMenuView: View {
                     trailingLabel: "⌘Q",
                     isDestructive: true,
                     primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 12
+                    isFocused: viewModel.settingsFocusedIndex == 14
                 ) {
                     NSApplication.shared.terminate(nil)
                 }
@@ -1044,3 +1067,5 @@ struct AppearanceStylePickerRow: View {
 //  feedback loop eliminated by switching to font-metric row heights in
 //  SettingsPageLayout.swift. Panel height = PageLayout.staticHeight +
 //  PickerLayout.expandedHeight, all compile-time, no measurement.)
+
+
