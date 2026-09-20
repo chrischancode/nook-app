@@ -86,12 +86,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mixpanel?.track(event: "App Launched")
         mixpanel?.flush()
 
-        if AppSettings.autoInstallHooks {
-            if AppSettings.claudeHooksEnabled { HookInstaller.installIfNeeded() }
-            if AppSettings.codexHooksEnabled { CodexHookInstaller.installIfNeeded() }
-            if AppSettings.opencodeHooksEnabled { OpencodeHookInstaller.installIfNeeded() }
-            if AppSettings.cursorHooksEnabled { CursorHookInstaller.installIfNeeded() }
-        }
+        // AI features removed
+
         NSApplication.shared.setActivationPolicy(.accessory)
 
         windowManager = WindowManager()

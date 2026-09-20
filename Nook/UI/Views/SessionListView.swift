@@ -120,11 +120,7 @@ struct SessionListView: View {
                 }
             }
 
-            if sessionMonitor.instances.isEmpty {
-                emptyState
-            } else {
-                instancesList
-            }
+            // AI features removed by user request
         }
         .onAppear {
             syncLayoutMetrics()

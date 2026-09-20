@@ -317,15 +317,8 @@ class NotchViewModel: ObservableObject {
             ? resolvedCameraHeight + InstancesPageLayout.contentSpacing
             : 0
 
-        let contentHeight: CGFloat
-        if instancesPageSessionCount > 0 {
-            contentHeight = listHeight(
-                rowHeight: resolvedRowHeight,
-                visibleRows: min(CGFloat(instancesPageSessionCount), InstancesPageLayout.targetVisibleRows)
-            )
-        } else {
-            contentHeight = InstancesPageLayout.emptyStateHeight
-        }
+        // AI features removed
+        let contentHeight: CGFloat = 0
 
         return chromeHeight + performanceBlockHeight + musicBlockHeight + pomodoroBlockHeight + cameraBlockHeight + contentHeight
     }

@@ -102,21 +102,11 @@ struct NotchMenuView: View {
                 )
 
                 MenuRow(
-                    icon: "terminal",
-                    label: "Agents...",
-                    trailingIcon: "chevron.right",
-                    primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 3
-                ) {
-                    viewModel.pushTo(.agents)
-                }
-
-                MenuRow(
                     icon: "gauge.with.dots.needle.33percent",
                     label: "Performance...",
                     trailingIcon: "chevron.right",
                     primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 4
+                    isFocused: viewModel.settingsFocusedIndex == 3
                 ) {
                     viewModel.pushTo(.performanceSettings)
                 }
@@ -126,7 +116,7 @@ struct NotchMenuView: View {
                     label: "Keyboard Shortcuts...",
                     trailingIcon: "chevron.right",
                     primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 5
+                    isFocused: viewModel.settingsFocusedIndex == 4
                 ) {
                     viewModel.pushTo(.shortcuts)
                 }
@@ -140,7 +130,7 @@ struct NotchMenuView: View {
                     selectedStyle: selectedAppearanceStyle,
                     primaryTextColor: primaryTextColor,
                     secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 6,
+                    isFocused: viewModel.settingsFocusedIndex == 5,
                     isExpanded: $isAppearancePickerExpanded,
                     onToggle: { _, _ in
                         markExplicitSet()
@@ -156,7 +146,7 @@ struct NotchMenuView: View {
                     isOn: musicEdgeGlowEnabled,
                     primaryTextColor: primaryTextColor,
                     secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 7
+                    isFocused: viewModel.settingsFocusedIndex == 6
                 ) {
                     musicEdgeGlowEnabled.toggle()
                 }
@@ -167,7 +157,7 @@ struct NotchMenuView: View {
                     isOn: vibeGlowEnabled,
                     primaryTextColor: primaryTextColor,
                     secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 8
+                    isFocused: viewModel.settingsFocusedIndex == 7
                 ) {
                     vibeGlowEnabled.toggle()
                 }
@@ -183,7 +173,7 @@ struct NotchMenuView: View {
                     isOn: pomodoroEnabled,
                     primaryTextColor: primaryTextColor,
                     secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 9
+                    isFocused: viewModel.settingsFocusedIndex == 8
                 ) {
                     pomodoroEnabled.toggle()
                 }
@@ -194,7 +184,7 @@ struct NotchMenuView: View {
                     isOn: cameraEnabled,
                     primaryTextColor: primaryTextColor,
                     secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 10
+                    isFocused: viewModel.settingsFocusedIndex == 9
                 ) {
                     cameraEnabled.toggle()
                 }
@@ -204,7 +194,7 @@ struct NotchMenuView: View {
                     isOn: launchAtLogin,
                     primaryTextColor: primaryTextColor,
                     secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 11
+                    isFocused: viewModel.settingsFocusedIndex == 10
                 ) {
                     do {
                         if launchAtLogin {
@@ -219,7 +209,7 @@ struct NotchMenuView: View {
                     }
                 }
 
-                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 12)
+                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 11)
 
                 Divider()
                     .background(separatorColor)
@@ -230,7 +220,7 @@ struct NotchMenuView: View {
                     label: "Star on GitHub",
                     trailingLabel: appVersion,
                     primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 13
+                    isFocused: viewModel.settingsFocusedIndex == 12
                 ) {
                     if let url = URL(string: "https://github.com/oa1mgo/nook") {
                         NSWorkspace.shared.open(url)
@@ -247,7 +237,7 @@ struct NotchMenuView: View {
                     trailingLabel: "⌘Q",
                     isDestructive: true,
                     primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 14
+                    isFocused: viewModel.settingsFocusedIndex == 13
                 ) {
                     NSApplication.shared.terminate(nil)
                 }
@@ -322,18 +312,16 @@ struct NotchMenuView: View {
         let i = viewModel.settingsFocusedIndex
         switch i {
         case 0: viewModel.toggleMenu()
-        case 1:
-            toggleScreenPickerFromKeyboard()
-        case 2:
-            toggleSoundPickerFromKeyboard()
-        case 3: viewModel.pushTo(.agents)
-        case 4: viewModel.pushTo(.performanceSettings)
-        case 5: viewModel.pushTo(.shortcuts)
-        case 6:
-            toggleAppearancePickerFromKeyboard()
-        case 7: musicEdgeGlowEnabled.toggle()
-        case 8: vibeGlowEnabled.toggle()
-        case 9:
+        case 1: toggleScreenPickerFromKeyboard()
+        case 2: toggleSoundPickerFromKeyboard()
+        case 3: viewModel.pushTo(.performanceSettings)
+        case 4: viewModel.pushTo(.shortcuts)
+        case 5: toggleAppearancePickerFromKeyboard()
+        case 6: musicEdgeGlowEnabled.toggle()
+        case 7: vibeGlowEnabled.toggle()
+        case 8: pomodoroEnabled.toggle()
+        case 9: cameraEnabled.toggle()
+        case 10:
             do {
                 if launchAtLogin {
                     try SMAppService.mainApp.unregister()
@@ -343,17 +331,11 @@ struct NotchMenuView: View {
                     launchAtLogin = true
                 }
             } catch {
-                print("Failed to toggle launch at login: \(error)")
+                print("Failed to toggle launch at login: $error")
             }
-        case 10:
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                NSWorkspace.shared.open(url)
-            }
-        case 11:
-            if let url = URL(string: "https://github.com/oa1mgo/nook") {
-                NSWorkspace.shared.open(url)
-            }
-        case 12: NSApplication.shared.terminate(nil)
+        case 11: break // Accessibility is read-only
+        case 12: NSWorkspace.shared.open(URL(string: "https://github.com/chrischancode/nook-app")!)
+        case 13: NSApplication.shared.terminate(nil)
         default: break
         }
     }
@@ -1067,5 +1049,7 @@ struct AppearanceStylePickerRow: View {
 //  feedback loop eliminated by switching to font-metric row heights in
 //  SettingsPageLayout.swift. Panel height = PageLayout.staticHeight +
 //  PickerLayout.expandedHeight, all compile-time, no measurement.)
+
+
 
 
