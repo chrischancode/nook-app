@@ -13,6 +13,8 @@ class NotchWindowController: NSWindowController {
     let viewModel: NotchViewModel
     private let screen: NSScreen
     private var cancellables = Set<AnyCancellable>()
+    private var globalMouseMonitor: Any?
+    private var localMouseMonitor: Any?
 
     init(screen: NSScreen, animateOnLaunch: Bool = true) {
         self.screen = screen
@@ -76,10 +78,40 @@ class NotchWindowController: NSWindowController {
                         NSApp.activate(ignoringOtherApps: false)
                         notchWindow?.makeKey()
                     }
+                    
+                    // Setup autohide monitors when opened
+                    if self.globalMouseMonitor == nil {
+                        self.globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+                            self?.viewModel.notchClose()
+                        }
+                    }
+                    if self.localMouseMonitor == nil {
+                        self.localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+                            if let notchWindow = self?.window,
+                               let eventWindow = event.window,
+                               eventWindow == notchWindow {
+                                // Inside the notch window, don't close
+                                return event
+                            }
+                            self?.viewModel.notchClose()
+                            return event
+                        }
+                    }
+                    
                 case .closed, .popping:
                     // Ignore mouse events when closed so clicks pass through
                     notchWindow?.ignoresMouseEvents = true
                     notchWindow?.resignKey()
+                    
+                    // Remove autohide monitors
+                    if let global = self.globalMouseMonitor {
+                        NSEvent.removeMonitor(global)
+                        self.globalMouseMonitor = nil
+                    }
+                    if let local = self.localMouseMonitor {
+                        NSEvent.removeMonitor(local)
+                        self.localMouseMonitor = nil
+                    }
                 }
             }
             .store(in: &cancellables)
