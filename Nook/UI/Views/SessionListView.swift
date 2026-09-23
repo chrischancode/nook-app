@@ -20,7 +20,10 @@ struct SessionListView: View {
     @State private var instanceRowHeight: CGFloat = 0
     @State private var performanceRowHeight: CGFloat = 0
     @State private var musicCardHeight: CGFloat = 0
+    @State private var cameraHeight: CGFloat = 0
     @State private var fileShelfHeight: CGFloat = 0
+    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
+    private var showsCamera: Bool { cameraEnabled }
     private var showsPerformanceRow: Bool { isPerformanceMonitorEnabled }
     private var showsMusicCard: Bool { musicManager.isVisible }
 
@@ -124,6 +127,9 @@ struct SessionListView: View {
             syncLayoutMetrics()
         }
         .onChange(of: performanceRowHeight) { _, _ in
+            syncLayoutMetrics()
+        }
+        .onChange(of: cameraHeight) { _, _ in
             syncLayoutMetrics()
         }
         .onChange(of: musicCardHeight) { _, _ in
@@ -318,6 +324,11 @@ private struct MusicCardHeightKey: PreferenceKey {
         value = nextValue()
     }
 
+private struct CameraHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {}
+}
+
 private struct FileShelfHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
@@ -373,6 +384,10 @@ private extension SessionListView {
 
         if abs(viewModel.instancesPageMusicCardHeight - musicCardHeight) > 0.5 {
             viewModel.instancesPageMusicCardHeight = musicCardHeight
+        }
+
+        if abs(viewModel.instancesPageCameraHeight - cameraHeight) > 0.5 {
+            viewModel.instancesPageCameraHeight = cameraHeight
         }
         if abs(viewModel.instancesPageFileShelfHeight - fileShelfHeight) > 0.5 {
             viewModel.instancesPageFileShelfHeight = fileShelfHeight
@@ -1219,5 +1234,6 @@ struct FileItemView: View {
         }
     }
 }
+
 
 
