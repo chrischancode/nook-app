@@ -20,12 +20,15 @@ struct SessionListView: View {
     @State private var instanceRowHeight: CGFloat = 0
     @State private var performanceRowHeight: CGFloat = 0
     @State private var musicCardHeight: CGFloat = 0
-    @State private var cameraHeight: CGFloat = 0
     @State private var fileShelfHeight: CGFloat = 0
+    @State private var cameraHeight: CGFloat = 0
+
+    @AppStorage("pomodoroEnabled") private var pomodoroEnabled: Bool = true
     @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
-    private var showsCamera: Bool { cameraEnabled }
     private var showsPerformanceRow: Bool { isPerformanceMonitorEnabled }
     private var showsMusicCard: Bool { musicManager.isVisible }
+    private var showsPomodoro: Bool { pomodoroEnabled }
+    private var showsCamera: Bool { cameraEnabled }
 
     /// Open the music source app (Apple Music / Spotify / etc.) and dismiss
     /// the notch so the user actually sees the app they just asked for.
@@ -79,25 +82,21 @@ struct SessionListView: View {
                     PerformanceSummaryRow(monitor: performanceMonitor) {
                         viewModel.pushTo(.performance(.overview))
                     }
-                FileShelfView()
-                    .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = if showsPerformanceRow {
-                    PerformanceSummaryRow(monitor: performanceMonitor) {
-                        viewModel.pushTo(.performance(.overview))
-                    } }
                     .measureHeight(using: PerformanceRowHeightKey.self) { performanceRowHeight = $0 }
                 }
-                }
+                
+                FileShelfView()
+                    .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = $0 }
+                
+                if showsCamera {
+                    CameraCardView()
+                        .measureHeight(using: CameraHeightKey.self) { cameraHeight = $0 }
                 }
             } else {
                 if showsPerformanceRow {
                     PerformanceSummaryRow(monitor: performanceMonitor) {
                         viewModel.pushTo(.performance(.overview))
                     }
-                FileShelfView()
-                    .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = if showsPerformanceRow {
-                    PerformanceSummaryRow(monitor: performanceMonitor) {
-                        viewModel.pushTo(.performance(.overview))
-                    } }
                     .measureHeight(using: PerformanceRowHeightKey.self) { performanceRowHeight = $0 }
                 }
 
@@ -108,7 +107,13 @@ struct SessionListView: View {
                     )
                     .measureHeight(using: MusicCardHeightKey.self) { musicCardHeight = $0 }
                 }
-                }
+                
+                FileShelfView()
+                    .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = $0 }
+                
+                if showsCamera {
+                    CameraCardView()
+                        .measureHeight(using: CameraHeightKey.self) { cameraHeight = $0 }
                 }
             }
 
@@ -129,13 +134,13 @@ struct SessionListView: View {
         .onChange(of: performanceRowHeight) { _, _ in
             syncLayoutMetrics()
         }
-        .onChange(of: cameraHeight) { _, _ in
-            syncLayoutMetrics()
-        }
         .onChange(of: musicCardHeight) { _, _ in
             syncLayoutMetrics()
         }
         .onChange(of: fileShelfHeight) { _, _ in
+            syncLayoutMetrics()
+        }
+        .onChange(of: cameraHeight) { _, _ in
             syncLayoutMetrics()
         }
         .onChange(of: instanceRowHeight) { _, _ in
@@ -325,15 +330,22 @@ private struct MusicCardHeightKey: PreferenceKey {
     }
 }
 
-private struct CameraHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {}
-}
-
 private struct FileShelfHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {}
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
 }
+
+private struct CameraHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 private struct PerformanceRowHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
@@ -381,11 +393,12 @@ private extension SessionListView {
             viewModel.instancesPageMusicCardHeight = musicCardHeight
         }
 
-        if abs(viewModel.instancesPageCameraHeight - cameraHeight) > 0.5 {
-            viewModel.instancesPageCameraHeight = cameraHeight
-        }
         if abs(viewModel.instancesPageFileShelfHeight - fileShelfHeight) > 0.5 {
             viewModel.instancesPageFileShelfHeight = fileShelfHeight
+        }
+
+        if abs(viewModel.instancesPageCameraHeight - cameraHeight) > 0.5 {
+            viewModel.instancesPageCameraHeight = cameraHeight
         }
     }
 }
@@ -892,9 +905,6 @@ struct TerminalButton: View {
 }
 
 
-
-
-
 class FileShelfManager: ObservableObject {
     static let shared = FileShelfManager()
     
@@ -1061,4 +1071,3 @@ struct FileItemView: View {
         }
     }
 }
-
