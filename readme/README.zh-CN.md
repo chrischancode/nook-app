@@ -1,7 +1,7 @@
 # Notchify
 
 <p align="center">
-  <img src="./ic_launcher.png" alt="Notchify 应用图标" width="112" />
+  <img src="./ic_launcher.png" alt="Notchify" width="160" />
 </p>
 
 <p align="center">
