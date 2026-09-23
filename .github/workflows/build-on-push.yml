@@ -1,9 +1,12 @@
-name: Build Notchify App
+name: Build and Release Notchify
 
 on:
   push:
-    branches: [ "**" ]
+    branches: [ "main" ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -18,15 +21,28 @@ jobs:
             -derivedDataPath build \
             build
 
-      - name: Compress App
+      - name: Package App (.zip and .dmg)
         run: |
           cd build/Build/Products/Release
           cp -R Nook.app Notchify.app
+          # Create .zip archive
           ditto -c -k --sequesterRsrc --keepParent Notchify.app Notchify.zip
-          ditto -c -k --sequesterRsrc --keepParent Nook.app Nook.zip
+          # Create .dmg Apple Disk Image
+          hdiutil create -volname "Notchify" -srcfolder Notchify.app -ov -format UDZO Notchify.dmg
 
-      - name: Upload Notchify.zip
+      - name: Upload Notchify Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Notchify-App
-          path: build/Build/Products/Release/Notchify.zip
+          path: |
+            build/Build/Products/Release/Notchify.zip
+            build/Build/Products/Release/Notchify.dmg
+
+      - name: Publish to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd build/Build/Products/Release
+          gh release upload v1.0.0 Notchify.dmg Notchify.zip --clobber || \
+          gh release create v1.0.0 Notchify.dmg Notchify.zip --title "Notchify v1.0.0" --notes "Notchify for macOS (v1.0.0)"
