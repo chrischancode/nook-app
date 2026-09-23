@@ -158,6 +158,10 @@ struct NotchView: View {
     private var expansionWidth: CGFloat {
         let baseExpansion = 2 * max(0, closedNotchSize.height - 12) + 20
 
+        if PomodoroManager.shared.isRunning {
+            return max(baseExpansion, 86)
+        }
+
         if showMusicActivity {
             return baseExpansion
         }
@@ -271,6 +275,22 @@ struct NotchView: View {
         }
         .onChange(of: expansionWidth) { _, newValue in
             viewModel.closedNotchExpansionWidth = newValue
+        }
+        .onReceive(PomodoroManager.shared.$state) { state in
+            if case .idle = state {
+                if viewModel.status == .closed && viewModel.hasPhysicalNotch {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        if !PomodoroManager.shared.isRunning && viewModel.status == .closed {
+                            isVisible = false
+                        }
+                    }
+                }
+            } else {
+                isVisible = true
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    viewModel.closedNotchExpansionWidth = expansionWidth
+                }
+            }
         }
     }
 
@@ -713,7 +733,10 @@ struct NotchView: View {
 
     @ViewBuilder
     private var headerRow: some View {
-        if showCompactMusicActivity {
+        if viewModel.status != .opened && PomodoroManager.shared.isRunning {
+            CompactPomodoroActivityView()
+                .frame(width: closedContentWidth, height: closedNotchSize.height)
+        } else if showCompactMusicActivity {
             CompactMusicActivityView(musicManager: musicManager)
                 .frame(width: closedContentWidth, height: closedNotchSize.height, alignment: .leading)
                 .frame(height: closedNotchSize.height)
@@ -1022,7 +1045,7 @@ struct NotchView: View {
             // Don't hide on non-notched devices - users need a visible target
             guard viewModel.hasPhysicalNotch else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                if viewModel.status == .closed && !vibeGlowVisible && !isAnyProcessing && !hasPendingPermission && !hasWaitingForInput && !showMusicActivity && !activityCoordinator.expandingActivity.show {
+                if viewModel.status == .closed && !vibeGlowVisible && !isAnyProcessing && !hasPendingPermission && !hasWaitingForInput && !showMusicActivity && !activityCoordinator.expandingActivity.show && !PomodoroManager.shared.isRunning {
                     isVisible = false
                 }
             }
@@ -1038,7 +1061,8 @@ struct NotchView: View {
                     !hasPendingPermission &&
                     !hasWaitingForInput &&
                     !showMusicActivity &&
-                    !activityCoordinator.expandingActivity.show {
+                    !activityCoordinator.expandingActivity.show &&
+                    !PomodoroManager.shared.isRunning {
             isVisible = false
         }
     }
@@ -1276,5 +1300,35 @@ private struct VibeSurroundEdge: Shape {
         )
 
         return path
+    }
+}
+
+// MARK: - Compact Pomodoro Activity View (Closed Notch)
+
+private struct CompactPomodoroActivityView: View {
+    @ObservedObject private var pomodoro = PomodoroManager.shared
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Left ear (left of the physical camera)
+            HStack(spacing: 3) {
+                Image(systemName: pomodoro.isBreak ? "cup.and.saucer.fill" : "timer")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(pomodoro.isBreak ? Color.green : Color.orange)
+            }
+            .frame(width: 24, alignment: .leading)
+
+            Spacer(minLength: 0)
+
+            // Right ear (right of the physical camera)
+            HStack(spacing: 3) {
+                Text(pomodoro.timeRemainingString)
+                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+            }
+            .frame(minWidth: 44, alignment: .trailing)
+        }
+        .padding(.horizontal, 9)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

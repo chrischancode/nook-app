@@ -1047,6 +1047,52 @@ final class PomodoroManager: ObservableObject {
     }
 }
 
+// MARK: - Instant Hover Tooltip Component
+
+struct InstantTooltipModifier: ViewModifier {
+    let text: String
+    var offsetY: CGFloat = 26
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isHovered = hovering
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if isHovered && !text.isEmpty {
+                    Text(text)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3.5)
+                        .background(
+                            Capsule()
+                                .fill(Color(red: 0.10, green: 0.10, blue: 0.13).opacity(0.96))
+                                .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                        )
+                        .fixedSize()
+                        .offset(y: offsetY)
+                        .zIndex(500)
+                        .allowsHitTesting(false)
+                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                }
+            }
+    }
+}
+
+extension View {
+    func instantTooltip(_ text: String, offsetY: CGFloat = 26) -> some View {
+        self.modifier(InstantTooltipModifier(text: text, offsetY: offsetY))
+    }
+}
+
 // MARK: - Quick Action Button View
 
 struct QuickActionButtonView: View {
@@ -1079,6 +1125,7 @@ struct QuickActionButtonView: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .help(tooltipText)
+        .instantTooltip(tooltipText, offsetY: 26)
     }
     
     private var iconName: String {
@@ -1100,9 +1147,9 @@ struct QuickActionButtonView: View {
             return "Lock Screen (Sleep Display)"
         case .pomodoro:
             if pomodoro.isRunning {
-                return "Pomodoro: \(pomodoro.timeRemainingString) remaining (Click to cancel)"
+                return "Pomodoro: \(pomodoro.timeRemainingString) (\(pomodoro.isBreak ? "Break" : "Focus"))"
             }
-            return "Start Pomodoro Timer (\(pomodoro.focusMinutes)m Focus)"
+            return "Start Pomodoro (\(pomodoro.focusMinutes)m Focus)"
         }
     }
     
@@ -1164,48 +1211,85 @@ class QuickNotesManager {
                 .replacingOccurrences(of: "\r\n", with: "<br>")
                 .replacingOccurrences(of: "\n", with: "<br>")
             
-            // AppleScript to create note directly in Notes.app
             let scriptSource = """
             tell application "Notes"
+                activate
+                set noteDone to false
+                
+                -- Strategy 1: Make note in default folder of default account
                 try
-                    make new note with properties {body:"<div><b>Notchify Quick Note:</b></div><br><div>\(escaped)</div>"}
-                on error
+                    tell default account
+                        make new note at default folder with properties {body:"<div><b>Notchify Quick Note:</b></div><br><div>\(escaped)</div>"}
+                        set noteDone to true
+                    end tell
+                end try
+                
+                -- Strategy 2: Make note in folder 1 of account 1
+                if not noteDone then
                     try
                         tell account 1
-                            make new note with properties {body:"<div><b>Notchify Quick Note:</b></div><br><div>\(escaped)</div>"}
+                            make new note at folder 1 with properties {body:"<div><b>Notchify Quick Note:</b></div><br><div>\(escaped)</div>"}
+                            set noteDone to true
                         end tell
-                    on error
-                        try
-                            tell default account
-                                make new note with properties {body:"<div><b>Notchify Quick Note:</b></div><br><div>\(escaped)</div>"}
-                            end tell
-                        end try
                     end try
-                end try
+                end if
+                
+                -- Strategy 3: Make note in folder "Notes"
+                if not noteDone then
+                    try
+                        make new note at folder "Notes" with properties {body:"<div><b>Notchify Quick Note:</b></div><br><div>\(escaped)</div>"}
+                        set noteDone to true
+                    end try
+                end if
+                
+                -- Strategy 4: Make note in first folder
+                if not noteDone then
+                    try
+                        make new note at first folder with properties {body:"<div><b>Notchify Quick Note:</b></div><br><div>\(escaped)</div>"}
+                        set noteDone to true
+                    end try
+                end if
+                
+                -- Strategy 5: Generic make note
+                if not noteDone then
+                    try
+                        make new note with properties {body:"<div><b>Notchify Quick Note:</b></div><br><div>\(escaped)</div>"}
+                        set noteDone to true
+                    end try
+                end if
+                
+                return noteDone
             end tell
             """
             
-            // 1. Try NSAppleScript execution
-            var error: NSDictionary?
-            if let script = NSAppleScript(source: scriptSource) {
-                let _ = script.executeAndReturnError(&error)
-                if error == nil {
-                    DispatchQueue.main.async { completion(true) }
-                    return
+            // Write script to a temporary .scpt file to prevent shell argument escaping errors
+            let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("notchify_export_\(UUID().uuidString).scpt")
+            var success = false
+            
+            do {
+                try scriptSource.write(to: tempFile, atomically: true, encoding: .utf8)
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                proc.arguments = [tempFile.path]
+                try proc.run()
+                proc.waitUntilExit()
+                success = (proc.terminationStatus == 0)
+                try? FileManager.default.removeItem(at: tempFile)
+            } catch {
+                success = false
+            }
+            
+            if !success {
+                // Secondary fallback using NSAppleScript
+                var error: NSDictionary?
+                if let script = NSAppleScript(source: scriptSource) {
+                    _ = script.executeAndReturnError(&error)
+                    success = (error == nil)
                 }
             }
             
-            // 2. Fallback to /usr/bin/osascript via Process
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            proc.arguments = ["-e", scriptSource]
-            do {
-                try proc.run()
-                proc.waitUntilExit()
-                let ok = (proc.terminationStatus == 0)
-                DispatchQueue.main.async { completion(ok) }
-            } catch {
-                DispatchQueue.main.async { completion(false) }
+            DispatchQueue.main.async {
+                completion(success)
             }
         }
     }
@@ -1244,7 +1328,7 @@ struct QuickNotesFullView: View {
                 }
                 .frame(width: 72)
                 
-                // Tabs in center (icons with tooltips)
+                // Tabs in center (icons with instant tooltips)
                 HStack(spacing: 4) {
                     Button(action: { selectedTab = "files" }) {
                         ZStack(alignment: .topTrailing) {
@@ -1265,6 +1349,7 @@ struct QuickNotesFullView: View {
                     }
                     .buttonStyle(.plain)
                     .help(fileManager.files.isEmpty ? "File Shelf (Drop files to hold)" : "File Shelf (\(fileManager.files.count) files)")
+                    .instantTooltip(fileManager.files.isEmpty ? "File Shelf" : "File Shelf (\(fileManager.files.count))")
                     .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
                         selectedTab = "files"
                         fileManager.loadAndAddFiles(from: providers)
@@ -1282,6 +1367,7 @@ struct QuickNotesFullView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Instant AirDrop (Drop files to share)")
+                    .instantTooltip("Instant AirDrop")
                     .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
                         selectedTab = "airdrop"
                         fileManager.sendAirDrop(from: providers)
@@ -1297,11 +1383,12 @@ struct QuickNotesFullView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Quick Notes")
+                    .instantTooltip("Quick Notes")
                 }
                 
                 Spacer()
                 
-                // Right Tools: Save to Apple Notes, Copy, Clear (icon-only with tooltips)
+                // Right Tools: Save to Apple Notes, Copy, Clear (icon-only with instant tooltips)
                 HStack(spacing: 4) {
                     // Export to Apple Notes button
                     Button(action: saveToNotesApp) {
@@ -1314,6 +1401,7 @@ struct QuickNotesFullView: View {
                     }
                     .buttonStyle(.plain)
                     .help(showSavedAlert ? "Saved to Apple Notes!" : "Save to Apple Notes app")
+                    .instantTooltip(showSavedAlert ? "Saved to Notes!" : "Save to Apple Notes")
                     
                     // Copy to clipboard button
                     Button(action: copyToClipboard) {
@@ -1326,6 +1414,7 @@ struct QuickNotesFullView: View {
                     }
                     .buttonStyle(.plain)
                     .help(showCopiedAlert ? "Copied!" : "Copy Notes to Clipboard")
+                    .instantTooltip(showCopiedAlert ? "Copied!" : "Copy Notes")
                     
                     // Clear notes button
                     if !notesText.isEmpty {
@@ -1339,6 +1428,7 @@ struct QuickNotesFullView: View {
                         }
                         .buttonStyle(.plain)
                         .help("Clear Notes")
+                        .instantTooltip("Clear Notes")
                     }
                 }
             }
@@ -1562,6 +1652,7 @@ struct StorageShelfColumnView: View {
                     }
                     .buttonStyle(.plain)
                     .help(manager.files.isEmpty ? "File Shelf (Drop files to hold)" : "File Shelf (\(manager.files.count) files)")
+                    .instantTooltip(manager.files.isEmpty ? "File Shelf" : "File Shelf (\(manager.files.count))")
                     .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
                         selectedTab = "files"
                         manager.loadAndAddFiles(from: providers)
@@ -1581,6 +1672,7 @@ struct StorageShelfColumnView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Instant AirDrop (Drop files to share)")
+                    .instantTooltip("Instant AirDrop")
                     .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
                         selectedTab = "airdrop"
                         manager.sendAirDrop(from: providers)
@@ -1600,6 +1692,7 @@ struct StorageShelfColumnView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Quick Notes (Expand full width)")
+                    .instantTooltip("Quick Notes")
 
                     Spacer()
 
@@ -1614,6 +1707,7 @@ struct StorageShelfColumnView: View {
                         }
                         .buttonStyle(.plain)
                         .help("Clear All Files from Shelf")
+                        .instantTooltip("Clear Shelf")
                     }
                 }
                 .padding(.horizontal, 6)
@@ -1889,6 +1983,7 @@ struct MediaCameraColumnView: View {
                         .background(Circle().fill(Color.white.opacity(0.12)))
                 }
                 .buttonStyle(.plain)
+                .instantTooltip(musicManager.playbackState.isPlaying ? "Pause" : "Play")
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
@@ -1942,6 +2037,7 @@ struct MediaCameraColumnView: View {
                                     .background(Circle().fill(Color.black.opacity(0.5)))
                             }
                             .buttonStyle(.plain)
+                            .instantTooltip("Turn off Camera Mirror")
                         }
                         .padding(5)
                         
@@ -1976,6 +2072,7 @@ struct MediaCameraColumnView: View {
                             .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
+                        .instantTooltip("Turn on Camera Mirror")
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
