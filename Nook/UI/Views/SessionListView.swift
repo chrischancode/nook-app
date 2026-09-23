@@ -23,11 +23,9 @@ struct SessionListView: View {
     @State private var fileShelfHeight: CGFloat = 0
     @State private var cameraHeight: CGFloat = 0
 
-    @AppStorage("pomodoroEnabled") private var pomodoroEnabled: Bool = true
     @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
     private var showsPerformanceRow: Bool { isPerformanceMonitorEnabled }
     private var showsMusicCard: Bool { musicManager.isVisible }
-    private var showsPomodoro: Bool { pomodoroEnabled }
     private var showsCamera: Bool { cameraEnabled }
 
     /// Open the music source app (Apple Music / Spotify / etc.) and dismiss
@@ -1017,17 +1015,10 @@ struct FileItemView: View {
     var body: some View {
         VStack(spacing: 4) {
             ZStack(alignment: .topTrailing) {
-                if let nsImage = NSWorkspace.shared.icon(forFile: url.path) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 32, height: 32)
-                } else {
-                    Image(systemName: "doc")
-                        .font(.system(size: 24))
-                        .foregroundColor(.white.opacity(0.8))
-                        .frame(width: 32, height: 32)
-                }
+                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 32, height: 32)
                 
                 if isHovered {
                     VStack(spacing: 2) {

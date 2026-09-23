@@ -54,7 +54,6 @@ struct NotchView: View {
     @AppStorage(AppSettings.musicEdgeGlowEnabledKey) private var musicEdgeGlowEnabled = true
     @AppStorage(AppSettings.vibeGlowEnabledKey) private var vibeGlowEnabled = false
     @AppStorage(AppSettings.performanceMonitorEnabledKey) private var performanceMonitorEnabled = true
-    @AppStorage("pomodoroEnabled") private var pomodoroEnabled: Bool = true
     @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
 
     @Namespace private var activityNamespace
@@ -262,9 +261,6 @@ struct NotchView: View {
         }
         .onChange(of: performanceMonitorEnabled) { _, isEnabled in
             performanceMonitor.setActive(isEnabled)
-            syncInstancesPageLayoutState()
-        }
-        .onChange(of: pomodoroEnabled) { _, _ in
             syncInstancesPageLayoutState()
         }
         .onChange(of: cameraEnabled) { _, _ in
@@ -971,7 +967,6 @@ struct NotchView: View {
         viewModel.instancesPageSessionCount = sessionCount
         viewModel.instancesPageShowsPerformance = performanceMonitorEnabled
         viewModel.instancesPageShowsMusic = showsMusic
-        viewModel.instancesPageShowsPomodoro = pomodoroEnabled
         viewModel.instancesPageShowsCamera = cameraEnabled
     }
 
