@@ -14,8 +14,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/chrischancode/nook-app/releases/latest">Download Latest Release</a> ·
-  <a href="https://github.com/chrischancode/nook-app/actions">Builds & Artifacts</a>
+  <a href="https://github.com/chrischancode/notchify/releases/latest">Download Latest Release</a> ·
+  <a href="https://github.com/chrischancode/notchify/actions">Builds & Artifacts</a>
 </p>
 
 ---
@@ -34,7 +34,7 @@
 ## 📥 Quick Download & Installation
 
 ### Step 1: Download
-- Download the latest `Notchify.zip` from **[Releases](https://github.com/chrischancode/nook-app/releases/latest)** or grab the latest build artifact from **[GitHub Actions](https://github.com/chrischancode/nook-app/actions)**.
+- Download the latest `Notchify.zip` from **[Releases](https://github.com/chrischancode/notchify/releases/latest)** or grab the latest build artifact from **[GitHub Actions](https://github.com/chrischancode/notchify/actions)**.
 
 ### Step 2: Install
 1. Unzip the downloaded file to find `Notchify.app`.

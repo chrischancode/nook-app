@@ -14,8 +14,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/chrischancode/nook-app/releases/latest">下载最新版本</a> ·
-  <a href="https://github.com/chrischancode/nook-app/actions">构建与 Artifacts</a>
+  <a href="https://github.com/chrischancode/notchify/releases/latest">下载最新版本</a> ·
+  <a href="https://github.com/chrischancode/notchify/actions">构建与 Artifacts</a>
 </p>
 
 ---
@@ -34,7 +34,7 @@
 ## 📥 快速下载与安装
 
 ### 步骤 1：下载
-- 从 **[Releases](https://github.com/chrischancode/nook-app/releases/latest)** 下载 `Notchify.zip`，或从 **[GitHub Actions](https://github.com/chrischancode/nook-app/actions)** 获取最新构建产物。
+- 从 **[Releases](https://github.com/chrischancode/notchify/releases/latest)** 下载 `Notchify.zip`，或从 **[GitHub Actions](https://github.com/chrischancode/notchify/actions)** 获取最新构建产物。
 
 ### 步骤 2：安装
 1. 解压下载的压缩包得到 `Notchify.app`。
