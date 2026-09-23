@@ -67,11 +67,13 @@ struct SessionListView: View {
     var body: some View {
         HStack(spacing: 8) {
             StorageShelfColumnView()
+                .frame(minWidth: 0, maxWidth: .infinity)
             MediaCameraColumnView(
                 musicManager: musicManager,
                 cameraEnabled: $cameraEnabled,
                 onOpenMusicSource: handleOpenMusicSource
             )
+            .frame(minWidth: 0, maxWidth: .infinity)
         }
         .frame(height: 148)
         .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = $0 }
@@ -885,134 +887,8 @@ struct StorageShelfColumnView: View {
     }
     
     var body: some View {
-        VStack(spacing: 4) {
-            // Tab Selector Header
-            HStack(spacing: 3) {
-                // Shelf tab
-                Button(action: { selectedTab = "files" }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "tray.fill")
-                            .font(.system(size: 8))
-                        Text(manager.files.isEmpty ? "Shelf" : "Shelf (\(manager.files.count))")
-                            .font(.system(size: 9, weight: .semibold))
-                    }
-                    .foregroundColor(!isAirDropMode ? .white : .white.opacity(0.5))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(!isAirDropMode ? Color.white.opacity(0.2) : (isShelfTargeted ? Color.white.opacity(0.12) : Color.clear))
-                    )
-                }
-                .buttonStyle(.plain)
-                .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
-                    selectedTab = "files"
-                    loadAndAddFiles(from: providers)
-                    return true
-                }
-
-                // AirDrop tab
-                Button(action: { selectedTab = "airdrop" }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "airplayaudio")
-                            .font(.system(size: 8))
-                        Text("AirDrop")
-                            .font(.system(size: 9, weight: .semibold))
-                    }
-                    .foregroundColor(isAirDropMode ? .white : .white.opacity(0.5))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(isAirDropMode ? Color.white.opacity(0.2) : (isAirDropTargeted ? Color.blue.opacity(0.3) : Color.clear))
-                    )
-                }
-                .buttonStyle(.plain)
-                .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
-                    selectedTab = "airdrop"
-                    sendAirDrop(from: providers)
-                    return true
-                }
-
-                Spacer()
-
-                if !isAirDropMode && !manager.files.isEmpty {
-                    Button(action: { manager.clearAll() }) {
-                        Text("Clear")
-                            .font(.system(size: 8.5, weight: .medium))
-                            .foregroundColor(.white.opacity(0.45))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 6)
-            .padding(.top, 5)
-
-            // Content Area
-            if isAirDropMode {
-                // AirDrop Instant Send Zone
-                VStack(spacing: 3) {
-                    Image(systemName: "airplayaudio")
-                        .font(.system(size: 20, weight: .regular))
-                        .foregroundColor(isAirDropTargeted ? .blue : .white.opacity(0.75))
-
-                    Text(isAirDropTargeted ? "Release to AirDrop!" : "Drop files to AirDrop")
-                        .font(.system(size: 9.5, weight: .medium))
-                        .foregroundColor(.white.opacity(0.7))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(isAirDropTargeted ? Color.blue.opacity(0.18) : Color.white.opacity(0.04))
-                .cornerRadius(10)
-                .padding(.horizontal, 5)
-                .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
-                    sendAirDrop(from: providers)
-                    return true
-                }
-                .onTapGesture {
-                    triggerAirDropPicker()
-                }
-            } else {
-                // File Shelf Zone
-                if !manager.files.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 5) {
-                            ForEach(manager.files, id: \.self) { fileURL in
-                                CompactFileItemView(url: fileURL, onRemove: {
-                                    manager.removeFile(url: fileURL)
-                                })
-                            }
-                        }
-                        .padding(.horizontal, 5)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
-                        loadAndAddFiles(from: providers)
-                        return true
-                    }
-                } else {
-                    VStack(spacing: 3) {
-                        Image(systemName: "tray.and.arrow.down")
-                            .font(.system(size: 18, weight: .regular))
-                            .foregroundColor(isShelfTargeted ? .white : .white.opacity(0.45))
-
-                        Text(isShelfTargeted ? "Release to hold!" : "Drop files to hold")
-                            .font(.system(size: 9.5, weight: .medium))
-                            .foregroundColor(.white.opacity(0.55))
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(isShelfTargeted ? Color.white.opacity(0.12) : Color.white.opacity(0.04))
-                    .cornerRadius(10)
-                    .padding(.horizontal, 5)
-                    .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
-                        loadAndAddFiles(from: providers)
-                        return true
-                    }
-                }
-            }
-
-            // Bottom Action Buttons: Small Capture & Lock Buttons
+        VStack(spacing: 5) {
+            // Top Action Buttons: Small Capture & Lock Buttons
             HStack(spacing: 5) {
                 Button(action: {
                     NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Screenshot.app"))
@@ -1022,6 +898,7 @@ struct StorageShelfColumnView: View {
                             .font(.system(size: 8.5))
                         Text("Capture")
                             .font(.system(size: 9, weight: .medium))
+                            .lineLimit(1)
                     }
                     .foregroundColor(.white.opacity(0.85))
                     .frame(maxWidth: .infinity)
@@ -1042,6 +919,7 @@ struct StorageShelfColumnView: View {
                             .font(.system(size: 8.5))
                         Text("Lock")
                             .font(.system(size: 9, weight: .medium))
+                            .lineLimit(1)
                     }
                     .foregroundColor(.white.opacity(0.85))
                     .frame(maxWidth: .infinity)
@@ -1052,7 +930,141 @@ struct StorageShelfColumnView: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 5)
-            .padding(.bottom, 5)
+            .padding(.top, 5)
+
+            // Storage Section (Below the buttons)
+            VStack(spacing: 4) {
+                // Tab Selector Header
+                HStack(spacing: 3) {
+                    // Shelf tab
+                    Button(action: { selectedTab = "files" }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "tray.fill")
+                                .font(.system(size: 8))
+                            Text(manager.files.isEmpty ? "Shelf" : "Shelf (\(manager.files.count))")
+                                .font(.system(size: 9, weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(!isAirDropMode ? .white : .white.opacity(0.5))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(!isAirDropMode ? Color.white.opacity(0.2) : (isShelfTargeted ? Color.white.opacity(0.12) : Color.clear))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
+                        selectedTab = "files"
+                        loadAndAddFiles(from: providers)
+                        return true
+                    }
+
+                    // AirDrop tab
+                    Button(action: { selectedTab = "airdrop" }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "airplayaudio")
+                                .font(.system(size: 8))
+                            Text("AirDrop")
+                                .font(.system(size: 9, weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(isAirDropMode ? .white : .white.opacity(0.5))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(isAirDropMode ? Color.white.opacity(0.2) : (isAirDropTargeted ? Color.blue.opacity(0.3) : Color.clear))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
+                        selectedTab = "airdrop"
+                        sendAirDrop(from: providers)
+                        return true
+                    }
+
+                    Spacer()
+
+                    if !isAirDropMode && !manager.files.isEmpty {
+                        Button(action: { manager.clearAll() }) {
+                            Text("Clear")
+                                .font(.system(size: 8.5, weight: .medium))
+                                .foregroundColor(.white.opacity(0.45))
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 6)
+
+                // Storage Content Area
+                if isAirDropMode {
+                    // AirDrop Instant Send Zone
+                    VStack(spacing: 3) {
+                        Image(systemName: "airplayaudio")
+                            .font(.system(size: 18, weight: .regular))
+                            .foregroundColor(isAirDropTargeted ? .blue : .white.opacity(0.75))
+
+                        Text(isAirDropTargeted ? "Release to AirDrop!" : "Drop files to AirDrop")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(isAirDropTargeted ? Color.blue.opacity(0.18) : Color.white.opacity(0.04))
+                    .cornerRadius(10)
+                    .padding(.horizontal, 5)
+                    .padding(.bottom, 5)
+                    .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
+                        sendAirDrop(from: providers)
+                        return true
+                    }
+                    .onTapGesture {
+                        triggerAirDropPicker()
+                    }
+                } else {
+                    // File Shelf Zone
+                    if !manager.files.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 5) {
+                                ForEach(manager.files, id: \.self) { fileURL in
+                                    CompactFileItemView(url: fileURL, onRemove: {
+                                        manager.removeFile(url: fileURL)
+                                    })
+                                }
+                            }
+                            .padding(.horizontal, 5)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.bottom, 5)
+                        .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
+                            loadAndAddFiles(from: providers)
+                            return true
+                        }
+                    } else {
+                        VStack(spacing: 3) {
+                            Image(systemName: "tray.and.arrow.down")
+                                .font(.system(size: 18, weight: .regular))
+                            .foregroundColor(isShelfTargeted ? .white : .white.opacity(0.45))
+
+                            Text(isShelfTargeted ? "Release to hold!" : "Drop files to hold")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.white.opacity(0.55))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(isShelfTargeted ? Color.white.opacity(0.12) : Color.white.opacity(0.04))
+                        .cornerRadius(10)
+                        .padding(.horizontal, 5)
+                        .padding(.bottom, 5)
+                        .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
+                            loadAndAddFiles(from: providers)
+                            return true
+                        }
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.white.opacity(0.06))
@@ -1180,63 +1192,59 @@ struct MediaCameraColumnView: View {
 
     private var secondaryLineText: String {
         let artist = musicManager.playbackState.artist.trimmingCharacters(in: .whitespacesAndNewlines)
-        return artist.isEmpty ? "" : artist
+        return artist.isEmpty ? "Music" : artist
     }
 
     var body: some View {
         VStack(spacing: 5) {
-            // Mini Audio / Music Strip (shown when music is active)
-            if musicManager.isVisible {
-                HStack(spacing: 6) {
-                    Button(action: onOpenMusicSource) {
-                        Group {
-                            if let image = musicManager.albumArt {
-                                Image(nsImage: image)
-                                    .resizable()
-                                    .scaledToFill()
-                            } else {
-                                Image(systemName: musicManager.fallbackSymbolName)
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.white.opacity(0.7))
-                            }
-                        }
-                        .frame(width: 24, height: 24)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                    }
-                    .buttonStyle(.plain)
-                    
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(primaryLineText)
-                            .font(.system(size: 9.5, weight: .semibold))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                        
-                        if !secondaryLineText.isEmpty {
-                            Text(secondaryLineText)
-                                .font(.system(size: 8.5))
-                                .foregroundColor(.white.opacity(0.55))
-                                .lineLimit(1)
+            // Mini Audio / Music Strip (Always present so camera size is consistent whether music is playing or not)
+            HStack(spacing: 6) {
+                Button(action: onOpenMusicSource) {
+                    Group {
+                        if let image = musicManager.albumArt {
+                            Image(nsImage: image)
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            Image(systemName: musicManager.isVisible ? musicManager.fallbackSymbolName : "music.note")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.7))
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    Button(action: {
-                        musicManager.togglePlayPause()
-                    }) {
-                        Image(systemName: musicManager.playbackState.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 8.5, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 20, height: 20)
-                            .background(Circle().fill(Color.white.opacity(0.12)))
-                    }
-                    .buttonStyle(.plain)
+                    .frame(width: 24, height: 24)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .background(Color.white.opacity(0.06))
-                .cornerRadius(8)
+                .buttonStyle(.plain)
+                
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(musicManager.isVisible ? primaryLineText : "Not Playing")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    
+                    Text(musicManager.isVisible && !secondaryLineText.isEmpty ? secondaryLineText : "Music")
+                        .font(.system(size: 8.5))
+                        .foregroundColor(.white.opacity(0.55))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                Button(action: {
+                    musicManager.togglePlayPause()
+                }) {
+                    Image(systemName: musicManager.playbackState.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Color.white.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(Color.white.opacity(0.06))
+            .cornerRadius(8)
             
             // Prominent Camera Mirror (Flipped horizontally like a real mirror)
             ZStack {
@@ -1246,7 +1254,7 @@ struct MediaCameraColumnView: View {
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .scaleEffect(x: -1, y: 1) // TRUE HORIZONTAL MIRROR FLIP!
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                             .clipped()
                     } else {
                         ZStack {
