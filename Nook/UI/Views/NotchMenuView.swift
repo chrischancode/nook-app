@@ -33,7 +33,7 @@ struct NotchMenuView: View {
     /// Keyboard..., divider, Appearance, Music Edge, Vibe, divider,
     /// Launch, Accessibility, divider, Star, divider, Quit).
     static var pageLayout: PageLayout {
-        PageLayout(rowCount: 15, dividerCount: 5)
+        PageLayout(rowCount: 12, dividerCount: 4)
     }
 
     /// Total height the menu VStack should report, given which pickers
@@ -167,12 +167,23 @@ struct NotchMenuView: View {
 
                 // System settings
                 MenuToggleRow(
+                    icon: "camera",
+                    label: "Camera Mirror",
+                    isOn: cameraEnabled,
+                    primaryTextColor: primaryTextColor,
+                    secondaryTextColor: secondaryTextColor,
+                    isFocused: viewModel.settingsFocusedIndex == 8
+                ) {
+                    cameraEnabled.toggle()
+                }
+
+                MenuToggleRow(
                     icon: "power",
                     label: "Launch at Login",
                     isOn: launchAtLogin,
                     primaryTextColor: primaryTextColor,
                     secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 8
+                    isFocused: viewModel.settingsFocusedIndex == 9
                 ) {
                     do {
                         if launchAtLogin {
@@ -187,23 +198,7 @@ struct NotchMenuView: View {
                     }
                 }
 
-                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 8)
-
-                Divider()
-                    .background(separatorColor)
-                    .padding(.vertical, 4)
-
-                MenuRow(
-                    icon: "star",
-                    label: "Star on GitHub",
-                    trailingLabel: appVersion,
-                    primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 9
-                ) {
-                    if let url = URL(string: "https://github.com/oa1mgo/nook") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
+                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 10)
 
                 Divider()
                     .background(separatorColor)
@@ -212,7 +207,7 @@ struct NotchMenuView: View {
                 MenuRow(
                     icon: "xmark.circle",
                     label: "Quit",
-                    trailingLabel: "⌘Q",
+                    trailingLabel: "?Q",
                     isDestructive: true,
                     primaryTextColor: primaryTextColor,
                     isFocused: viewModel.settingsFocusedIndex == 11
@@ -297,8 +292,8 @@ struct NotchMenuView: View {
         case 5: toggleAppearancePickerFromKeyboard()
         case 6: musicEdgeGlowEnabled.toggle()
         case 7: vibeGlowEnabled.toggle()
-        
-        case 8:
+        case 8: cameraEnabled.toggle()
+        case 9:
             do {
                 if launchAtLogin {
                     try SMAppService.mainApp.unregister()
@@ -308,11 +303,10 @@ struct NotchMenuView: View {
                     launchAtLogin = true
                 }
             } catch {
-                print("Failed to toggle launch at login: $error")
+                print("Failed to toggle launch at login: \(error)")
             }
-        case 9: break // Accessibility is read-only
-        case 9: NSWorkspace.shared.open(URL(string: "https://github.com/chrischancode/nook-app")!)
-        case 10: NSApplication.shared.terminate(nil)
+        case 10: break // Accessibility is read-only
+        case 11: NSApplication.shared.terminate(nil)
         default: break
         }
     }
@@ -1026,6 +1020,9 @@ struct AppearanceStylePickerRow: View {
 //  feedback loop eliminated by switching to font-metric row heights in
 //  SettingsPageLayout.swift. Panel height = PageLayout.staticHeight +
 //  PickerLayout.expandedHeight, all compile-time, no measurement.)
+
+
+
 
 
 
