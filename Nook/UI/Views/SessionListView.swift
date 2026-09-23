@@ -37,26 +37,6 @@ struct SessionListView: View {
         viewModel.notchClose()
     }
 
-    private func handleQuickAirDrop() {
-        if !FileShelfManager.shared.files.isEmpty {
-            let service = NSSharingService(named: .sendViaAirDrop)
-            service?.perform(withItems: FileShelfManager.shared.files)
-        } else {
-            let panel = NSOpenPanel()
-            panel.title = "Select Files to AirDrop"
-            panel.prompt = "AirDrop"
-            panel.allowsMultipleSelection = true
-            panel.canChooseFiles = true
-            panel.canChooseDirectories = false
-            panel.begin { response in
-                if response == .OK && !panel.urls.isEmpty {
-                    let service = NSSharingService(named: .sendViaAirDrop)
-                    service?.perform(withItems: panel.urls)
-                }
-            }
-        }
-    }
-
     private var maxInstancesListHeight: CGFloat {
         InstancesListLayout.maxListHeight(
             rowHeight: instanceRowHeight
@@ -94,19 +74,13 @@ struct SessionListView: View {
                 .measureHeight(using: MusicCardHeightKey.self) { musicCardHeight = $0 }
             }
 
-            QuickActionsBar(
-                cameraEnabled: $cameraEnabled,
-                onAirDrop: handleQuickAirDrop
-            )
-            .measureHeight(using: PerformanceRowHeightKey.self) { performanceRowHeight = $0 }
-            
-            FileShelfView()
-                .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = $0 }
-            
-            if showsCamera {
-                CameraCardView()
-                    .measureHeight(using: CameraHeightKey.self) { cameraHeight = $0 }
+            // 2-Column Workspace: Left = Storage (Files & AirDrop), Right = Camera Mirror
+            HStack(spacing: 8) {
+                StorageShelfColumnView()
+                CameraMirrorColumnView(cameraEnabled: $cameraEnabled)
             }
+            .frame(height: 104)
+            .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = $0 }
 
             // AI features removed by user request
         }
@@ -895,106 +869,7 @@ struct TerminalButton: View {
     }
 }
 
-// MARK: - Quick Actions Bar
-
-struct QuickActionsBar: View {
-    @Binding var cameraEnabled: Bool
-    let onAirDrop: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            // Live Camera Mirror Toggle
-            QuickActionButton(
-                icon: cameraEnabled ? "video.fill" : "video",
-                label: cameraEnabled ? "Mirror On" : "Mirror",
-                isActive: cameraEnabled,
-                action: {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        cameraEnabled.toggle()
-                    }
-                }
-            )
-            
-            // AirDrop Action
-            QuickActionButton(
-                icon: "airplayaudio",
-                label: "AirDrop",
-                isActive: false,
-                action: onAirDrop
-            )
-            
-            // Screen Capture
-            QuickActionButton(
-                icon: "camera.viewfinder",
-                label: "Capture",
-                isActive: false,
-                action: {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Screenshot.app"))
-                }
-            )
-            
-            // Lock Screen
-            QuickActionButton(
-                icon: "lock.fill",
-                label: "Lock",
-                isActive: false,
-                action: {
-                    let task = Process()
-                    task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
-                    task.arguments = ["displaysleepnow"]
-                    try? task.run()
-                }
-            )
-        }
-        .frame(height: 44)
-    }
-}
-
-struct QuickActionButton: View {
-    let icon: String
-    let label: String
-    var isActive: Bool = false
-    let action: () -> Void
-    
-    @State private var isHovered = false
-    
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(isActive ? .black : .white)
-                
-                Text(label)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(isActive ? .black : .white.opacity(0.8))
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(
-                        isActive
-                            ? Color.white
-                            : (isHovered ? Color.white.opacity(0.18) : Color.white.opacity(0.08))
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(
-                        isActive ? Color.white.opacity(0.3) : Color.white.opacity(0.08),
-                        lineWidth: 1
-                    )
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover { hover in
-            isHovered = hover
-            if hover { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
-    }
-}
-
+// MARK: - File Shelf Manager
 
 class FileShelfManager: ObservableObject {
     static let shared = FileShelfManager()
@@ -1021,130 +896,250 @@ class FileShelfManager: ObservableObject {
     }
 }
 
-struct FileShelfView: View {
+// MARK: - Storage & AirDrop Column (Left)
+
+enum StorageTabMode {
+    case files
+    case airdrop
+}
+
+struct StorageShelfColumnView: View {
     @ObservedObject var manager = FileShelfManager.shared
-    @State private var isDropTargeted = false
+    @State private var mode: StorageTabMode = .files
+    @State private var isShelfTargeted = false
+    @State private var isAirDropTargeted = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("File Shelf")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.6))
-                
+        VStack(spacing: 4) {
+            // Tab Selector Header
+            HStack(spacing: 3) {
+                // Shelf tab
+                Button(action: { mode = .files }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "tray.fill")
+                            .font(.system(size: 8))
+                        Text(manager.files.isEmpty ? "Shelf" : "Shelf (\(manager.files.count))")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundColor(mode == .files ? .white : .white.opacity(0.5))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(mode == .files ? Color.white.opacity(0.2) : (isShelfTargeted ? Color.white.opacity(0.12) : Color.clear))
+                    )
+                }
+                .buttonStyle(.plain)
+                .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
+                    mode = .files
+                    loadAndAddFiles(from: providers)
+                    return true
+                }
+
+                // AirDrop tab
+                Button(action: { mode = .airdrop }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "airplayaudio")
+                            .font(.system(size: 8))
+                        Text("AirDrop")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundColor(mode == .airdrop ? .white : .white.opacity(0.5))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(mode == .airdrop ? Color.white.opacity(0.2) : (isAirDropTargeted ? Color.blue.opacity(0.3) : Color.clear))
+                    )
+                }
+                .buttonStyle(.plain)
+                .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
+                    mode = .airdrop
+                    sendAirDrop(from: providers)
+                    return true
+                }
+
                 Spacer()
-                
-                if !manager.files.isEmpty {
-                    Button(action: {
-                        manager.clearAll()
-                    }) {
+
+                if mode == .files && !manager.files.isEmpty {
+                    Button(action: { manager.clearAll() }) {
                         Text("Clear")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.white.opacity(0.4))
+                            .font(.system(size: 8.5, weight: .medium))
+                            .foregroundColor(.white.opacity(0.45))
                     }
                     .buttonStyle(.plain)
-                    .onHover { hover in
-                        if hover { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-                    }
                 }
             }
-            .padding(.horizontal, 12)
-            
-            if !manager.files.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(manager.files, id: \.self) { fileURL in
-                            FileItemView(url: fileURL, onRemove: {
-                                manager.removeFile(url: fileURL)
-                            }, onAirDrop: {
-                                manager.airDropFile(url: fileURL)
-                            })
-                        }
-                    }
-                    .padding(.horizontal, 12)
+            .padding(.horizontal, 6)
+            .padding(.top, 5)
+
+            // Content Area
+            if mode == .airdrop {
+                // AirDrop Instant Send Zone
+                VStack(spacing: 3) {
+                    Image(systemName: "airplayaudio")
+                        .font(.system(size: 18, weight: .regular))
+                        .foregroundColor(isAirDropTargeted ? .blue : .white.opacity(0.75))
+
+                    Text(isAirDropTargeted ? "Release to AirDrop!" : "Drop files to AirDrop")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                        .lineLimit(1)
                 }
-                .frame(height: 70)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(isAirDropTargeted ? Color.blue.opacity(0.18) : Color.white.opacity(0.04))
+                .cornerRadius(10)
+                .padding(.horizontal, 5)
+                .padding(.bottom, 5)
+                .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
+                    sendAirDrop(from: providers)
+                    return true
+                }
+                .onTapGesture {
+                    triggerAirDropPicker()
+                }
             } else {
-                VStack(spacing: 6) {
-                    Image(systemName: "tray.and.arrow.down")
-                        .font(.system(size: 20))
-                        .foregroundColor(isDropTargeted ? .white : .white.opacity(0.4))
-                    Text("Drag files here to temporarily hold them")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(isDropTargeted ? .white : .white.opacity(0.4))
+                // File Shelf Zone
+                if !manager.files.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 5) {
+                            ForEach(manager.files, id: \.self) { fileURL in
+                                CompactFileItemView(url: fileURL, onRemove: {
+                                    manager.removeFile(url: fileURL)
+                                })
+                            }
+                        }
+                        .padding(.horizontal, 5)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.bottom, 5)
+                    .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
+                        loadAndAddFiles(from: providers)
+                        return true
+                    }
+                } else {
+                    VStack(spacing: 3) {
+                        Image(systemName: "tray.and.arrow.down")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(isShelfTargeted ? .white : .white.opacity(0.45))
+
+                        Text(isShelfTargeted ? "Release to hold!" : "Drop files to hold")
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundColor(.white.opacity(0.55))
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(isShelfTargeted ? Color.white.opacity(0.12) : Color.white.opacity(0.04))
+                    .cornerRadius(10)
+                    .padding(.horizontal, 5)
+                    .padding(.bottom, 5)
+                    .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
+                        loadAndAddFiles(from: providers)
+                        return true
+                    }
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 70)
-                .background(isDropTargeted ? Color.white.opacity(0.1) : Color.white.opacity(0.03))
-                .cornerRadius(12)
-                .padding(.horizontal, 12)
             }
         }
-        .padding(.vertical, 8)
-        .background(Color.black.opacity(0.2))
-        .cornerRadius(16)
-        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
-            for provider in providers {
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (item, error) in
-                    if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
-                        DispatchQueue.main.async {
-                            manager.addFile(url: url)
-                        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white.opacity(0.06))
+        .cornerRadius(13)
+        .overlay(
+            RoundedRectangle(cornerRadius: 13)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func loadAndAddFiles(from providers: [NSItemProvider]) {
+        for provider in providers {
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (item, error) in
+                if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    DispatchQueue.main.async {
+                        manager.addFile(url: url)
                     }
                 }
             }
-            return true
+        }
+    }
+
+    private func sendAirDrop(from providers: [NSItemProvider]) {
+        var collectedURLs: [URL] = []
+        let group = DispatchGroup()
+        for provider in providers {
+            group.enter()
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (item, error) in
+                if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    collectedURLs.append(url)
+                }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            if !collectedURLs.isEmpty {
+                let service = NSSharingService(named: .sendViaAirDrop)
+                service?.perform(withItems: collectedURLs)
+            }
+        }
+    }
+
+    private func triggerAirDropPicker() {
+        if !manager.files.isEmpty {
+            let service = NSSharingService(named: .sendViaAirDrop)
+            service?.perform(withItems: manager.files)
+        } else {
+            let panel = NSOpenPanel()
+            panel.title = "Select Files to AirDrop"
+            panel.prompt = "AirDrop"
+            panel.allowsMultipleSelection = true
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.begin { response in
+                if response == .OK && !panel.urls.isEmpty {
+                    let service = NSSharingService(named: .sendViaAirDrop)
+                    service?.perform(withItems: panel.urls)
+                }
+            }
         }
     }
 }
 
-struct FileItemView: View {
+// MARK: - Compact File Item View
+
+struct CompactFileItemView: View {
     let url: URL
     let onRemove: () -> Void
-    let onAirDrop: () -> Void
     
     @State private var isHovered = false
     
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 2) {
             ZStack(alignment: .topTrailing) {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 28, height: 28)
                 
                 if isHovered {
-                    VStack(spacing: 2) {
-                        Button(action: onRemove) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white)
-                                .background(Circle().fill(Color.black.opacity(0.6)))
-                        }
-                        .buttonStyle(.plain)
-                        
-                        Button(action: onAirDrop) {
-                            Image(systemName: "airplayaudio.circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(.blue)
-                                .background(Circle().fill(Color.black.opacity(0.6)))
-                        }
-                        .buttonStyle(.plain)
+                    Button(action: onRemove) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white)
+                            .background(Circle().fill(Color.black.opacity(0.6)))
                     }
-                    .offset(x: 10, y: -10)
+                    .buttonStyle(.plain)
+                    .offset(x: 5, y: -5)
                 }
             }
             
             Text(url.lastPathComponent)
-                .font(.system(size: 9))
+                .font(.system(size: 8))
                 .foregroundColor(.white.opacity(0.8))
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .frame(width: 54)
+                .frame(width: 44)
         }
-        .padding(8)
-        .background(Color.white.opacity(isHovered ? 0.15 : 0.08))
-        .cornerRadius(8)
+        .padding(4)
+        .background(Color.white.opacity(isHovered ? 0.15 : 0.05))
+        .cornerRadius(6)
         .onHover { hover in
             isHovered = hover
             if hover { NSCursor.pointingHand.push() } else { NSCursor.pop() }
@@ -1152,6 +1147,123 @@ struct FileItemView: View {
         .onDrag {
             let provider = NSItemProvider(contentsOf: url) ?? NSItemProvider()
             return provider
+        }
+    }
+}
+
+// MARK: - Camera Mirror Column (Right)
+
+struct CameraMirrorColumnView: View {
+    @Binding var cameraEnabled: Bool
+    @ObservedObject var cameraManager = CameraManager.shared
+    
+    var body: some View {
+        ZStack {
+            if cameraEnabled {
+                // Live Camera Feed Flipped as a True Mirror
+                if let cgImage = cameraManager.frame {
+                    Image(cgImage, scale: 1.0, orientation: .up, label: Text("Mirror"))
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .scaleEffect(x: -1, y: 1) // FLIPPED HORIZONTALLY AS A REAL MIRROR!
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                } else {
+                    ZStack {
+                        Color.black.opacity(0.3)
+                        ProgressView()
+                            .scaleEffect(0.6)
+                    }
+                }
+                
+                // Top Overlay Controls
+                VStack {
+                    HStack {
+                        HStack(spacing: 3) {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 5, height: 5)
+                            Text("Mirror")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.black.opacity(0.4))
+                        .clipShape(Capsule())
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                cameraEnabled = false
+                            }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 13))
+                                .foregroundColor(.white.opacity(0.85))
+                                .background(Circle().fill(Color.black.opacity(0.5)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(5)
+                    
+                    Spacer()
+                }
+            } else {
+                // Camera Mirror Off - Turn On / Quick Setting Tile
+                VStack(spacing: 5) {
+                    Image(systemName: "video.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.white.opacity(0.45))
+                    
+                    Text("Camera Mirror")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.75))
+                    
+                    Button(action: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            cameraEnabled = true
+                        }
+                    }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "power")
+                                .font(.system(size: 8, weight: .bold))
+                            Text("Turn On")
+                                .font(.system(size: 9, weight: .semibold))
+                        }
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3.5)
+                        .background(Color.white.opacity(0.95))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white.opacity(0.06))
+        .cornerRadius(13)
+        .overlay(
+            RoundedRectangle(cornerRadius: 13)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .onAppear {
+            if cameraEnabled {
+                cameraManager.start()
+            }
+        }
+        .onChange(of: cameraEnabled) { _, isEnabled in
+            if isEnabled {
+                cameraManager.start()
+            } else {
+                cameraManager.stop()
+            }
+        }
+        .onDisappear {
+            cameraManager.stop()
         }
     }
 }

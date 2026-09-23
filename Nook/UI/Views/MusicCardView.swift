@@ -9,19 +9,19 @@ struct MusicCardView: View {
     @State private var keyMonitor: Any?
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             artworkColumnWithTooltip
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(primaryLineText)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(.white)
                             .lineLimit(1)
 
                         Text(secondaryLineText)
-                            .font(.system(size: 11))
+                            .font(.system(size: 9.5))
                             .foregroundColor(.white.opacity(0.55))
                             .lineLimit(1)
                     }
@@ -36,15 +36,15 @@ struct MusicCardView: View {
 
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 2.5)
+                            RoundedRectangle(cornerRadius: 1.5)
                                 .fill(Color.white.opacity(0.15))
-                                .frame(height: 5)
+                                .frame(height: 3)
 
-                            RoundedRectangle(cornerRadius: 2.5)
+                            RoundedRectangle(cornerRadius: 1.5)
                                 .fill(Color.white.opacity(0.9))
-                                .frame(width: max(0, geo.size.width * fraction), height: 5)
+                                .frame(width: max(0, geo.size.width * fraction), height: 3)
                         }
-                        .frame(height: 5)
+                        .frame(height: 3)
                         .contentShape(Rectangle())
                         .onTapGesture { location in
                             let tapFraction = location.x / geo.size.width
@@ -52,22 +52,15 @@ struct MusicCardView: View {
                             musicManager.seekTo(seekTime)
                         }
                     }
-                    .frame(height: 5)
-
-                    HStack {
-                        Text(formatTime(elapsedTime))
-                        Spacer()
-                        Text(formatTime(musicManager.playbackState.duration))
-                    }
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.35))
+                    .frame(height: 3)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color.white.opacity(0.05))
         )
         .onAppear {
@@ -154,26 +147,25 @@ private extension MusicCardView {
                             .scaledToFill()
                     } else {
                         Image(systemName: musicManager.fallbackSymbolName)
-                            .font(.system(size: 22, weight: .medium))
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.white.opacity(0.75))
                     }
                 }
-                .frame(width: 76, height: 76)
+                .frame(width: 34, height: 34)
                 .background(Color.white.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 if let sourceApp = musicManager.sourceApp, let icon = sourceApp.icon {
                     Image(nsImage: icon)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 16, height: 16)
-                        .padding(3)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                        .padding(3)
+                        .frame(width: 12, height: 12)
+                        .padding(2)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
             }
-            .frame(width: 76, height: 76)
+            .frame(width: 34, height: 34)
         }
         .buttonStyle(.plain)
     }
@@ -184,7 +176,7 @@ private extension MusicCardView {
     }
 
     var controlsRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             TransportButton(
                 systemName: "backward.fill",
                 shortcut: "⌃⌘←",
@@ -311,12 +303,12 @@ private struct TransportButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: isPrimary ? 13 : 11, weight: .semibold))
+                .font(.system(size: isPrimary ? 10 : 8, weight: .semibold))
                 .foregroundColor(.white.opacity(isPrimary ? 0.98 : 0.82))
-                .frame(width: isPrimary ? 28 : 24, height: isPrimary ? 28 : 24)
+                .frame(width: isPrimary ? 22 : 18, height: isPrimary ? 22 : 18)
                 .background(
                     Circle()
-                        .fill(Color.white.opacity(isPrimary ? 0.12 : 0.05))
+                        .fill(Color.white.opacity(isPrimary ? 0.15 : 0.05))
                 )
         }
         .buttonStyle(.plain)

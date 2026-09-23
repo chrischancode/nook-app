@@ -10,6 +10,7 @@ struct CameraCardView: View {
                     Image(cgImage, scale: 1.0, label: Text("Camera Feed"))
                         .resizable()
                         .aspectRatio(contentMode: .fill)
+                        .scaleEffect(x: -1, y: 1)
                         .frame(width: 40, height: 40)
                         .clipShape(Circle())
                 } else {

@@ -303,18 +303,12 @@ class NotchViewModel: ObservableObject {
 
     private var instancesPageOpenedHeight: CGFloat {
         let chromeHeight = InstancesPageLayout.emptyHeight - InstancesPageLayout.emptyStateHeight
-        let performanceBlockHeight: CGFloat = instancesPageShowsPerformance
-            ? resolvedPerformanceRowHeight + InstancesPageLayout.contentSpacing
-            : 0
         let musicBlockHeight: CGFloat = instancesPageShowsMusic
             ? resolvedMusicCardHeight + InstancesPageLayout.contentSpacing
             : 0
-        let fileShelfBlockHeight = instancesPageFileShelfHeight + InstancesPageLayout.contentSpacing
-        let cameraBlockHeight: CGFloat = instancesPageShowsCamera ? resolvedCameraHeight + InstancesPageLayout.contentSpacing : 0
-        // AI features removed
-        let contentHeight: CGFloat = 0
+        let workspaceBlockHeight: CGFloat = max(instancesPageFileShelfHeight, 104) + InstancesPageLayout.contentSpacing
 
-        return chromeHeight + performanceBlockHeight + musicBlockHeight + fileShelfBlockHeight + cameraBlockHeight + contentHeight
+        return chromeHeight + musicBlockHeight + workspaceBlockHeight
     }
 
     private var resolvedCameraHeight: CGFloat {
@@ -326,7 +320,7 @@ class NotchViewModel: ObservableObject {
     }
 
     private var resolvedMusicCardHeight: CGFloat {
-        max(instancesPageMusicCardHeight, InstancesPageLayout.fallbackMusicBlockHeight - InstancesPageLayout.contentSpacing)
+        max(instancesPageMusicCardHeight, 44)
     }
     private var resolvedPerformanceRowHeight: CGFloat {
         max(instancesPagePerformanceRowHeight, InstancesPageLayout.fallbackPerformanceRowHeight)
