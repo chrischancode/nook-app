@@ -1,7 +1,7 @@
-# Nook
+# Notchify
 
 <p align="center">
-  <img src="./ic_launcher.png" alt="Nook 应用图标" width="112" />
+  <img src="./ic_launcher.png" alt="Notchify 应用图标" width="112" />
 </p>
 
 <p align="center">
@@ -9,7 +9,8 @@
 </p>
 
 <p align="center">
-  <strong>Done by Christian Saguirre</strong>
+  <strong>Notchify by Christian Saguirre</strong><br />
+  <em>Inspired to make by Nadiane</em>
 </p>
 
 <p align="center">
@@ -33,32 +34,32 @@
 ## 📥 快速下载与安装
 
 ### 步骤 1：下载
-- 从 **[Releases](https://github.com/chrischancode/nook-app/releases/latest)** 下载 `Nook.zip`，或从 **[GitHub Actions](https://github.com/chrischancode/nook-app/actions)** 获取最新构建产物。
+- 从 **[Releases](https://github.com/chrischancode/nook-app/releases/latest)** 下载 `Notchify.zip`，或从 **[GitHub Actions](https://github.com/chrischancode/nook-app/actions)** 获取最新构建产物。
 
 ### 步骤 2：安装
-1. 解压下载的压缩包得到 `Nook.app`。
-2. 将 `Nook.app` 拖入**应用程序**文件夹 (`/Applications`)。
+1. 解压下载的压缩包得到 `Notchify.app`。
+2. 将 `Notchify.app` 拖入**应用程序**文件夹 (`/Applications`)。
 
 ---
 
 ## 💻 终端修复命令（重要）
 
 由于从 GitHub 下载的应用未经 Mac App Store 签名，macOS Gatekeeper 可能会提示：  
-> *“Nook 已损坏，打不开”* 或 *“无法验证开发者”*。
+> *“Notchify 已损坏，打不开”* 或 *“无法验证开发者”*。
 
 打开 Mac **终端** (按 `Cmd + 空格` 搜索 `终端` 并回车)，运行此命令即可立即解决：
 
 ```bash
-xattr -cr /Applications/Nook.app
+xattr -cr /Applications/Notchify.app
 ```
 
-> **原理说明**：该命令会清除 macOS 的安全隔离属性 (`com.apple.quarantine`)，使 Nook 可以正常秒开。
+> **原理说明**：该命令会清除 macOS 的安全隔离属性 (`com.apple.quarantine`)，使 Notchify 可以正常秒开。
 
 ---
 
 ## ⚙️ 权限设置
 
-首次启动 Nook 时，请根据需要授予以下权限：
+首次启动 Notchify 时，请根据需要授予以下权限：
 1. **摄像头**：用于实时相机镜像功能 (`系统设置 > 隐私与安全性 > 摄像头`)。
 2. **辅助功能**：用于刘海窗口精确定位与全局快捷键 (`系统设置 > 隐私与安全性 > 辅助功能`)。
 
@@ -66,5 +67,6 @@ xattr -cr /Applications/Nook.app
 
 ## 👤 Credits
 
-- **Done by**: Christian Saguirre
+- **Notchify by**: Christian Saguirre
+- **Inspired to make by**: Nadiane
 - Inspired by modern macOS Dynamic Island experiences.

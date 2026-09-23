@@ -1,7 +1,7 @@
-# Nook
+# Notchify
 
 <p align="center">
-  <img src="./readme/ic_launcher.png" alt="Nook app icon" width="112" />
+  <img src="./readme/ic_launcher.png" alt="Notchify app icon" width="112" />
 </p>
 
 <p align="center">
@@ -9,7 +9,8 @@
 </p>
 
 <p align="center">
-  <strong>Done by Christian Saguirre</strong>
+  <strong>Notchify by Christian Saguirre</strong><br />
+  <em>Inspired to make by Nadiane</em>
 </p>
 
 <p align="center">
@@ -33,50 +34,51 @@
 ## 📥 Quick Download & Installation
 
 ### Step 1: Download
-- Download the latest `Nook.zip` from **[Releases](https://github.com/chrischancode/nook-app/releases/latest)** or the latest build artifact from **[GitHub Actions](https://github.com/chrischancode/nook-app/actions)**.
+- Download the latest `Notchify.zip` from **[Releases](https://github.com/chrischancode/nook-app/releases/latest)** or grab the latest build artifact from **[GitHub Actions](https://github.com/chrischancode/nook-app/actions)**.
 
 ### Step 2: Install
-1. Unzip the downloaded file to find `Nook.app`.
-2. Drag `Nook.app` into your **Applications** folder (`/Applications`).
+1. Unzip the downloaded file to find `Notchify.app`.
+2. Drag `Notchify.app` into your **Applications** folder (`/Applications`).
 
 ---
 
 ## 💻 Terminal Command (Important)
 
-Because Nook is downloaded directly from GitHub rather than the Mac App Store, macOS Gatekeeper may show a warning:  
-> *"Nook is damaged and can't be opened"* or *"macOS cannot verify the developer"*.
+Because Notchify is downloaded directly from GitHub rather than the Mac App Store, macOS Gatekeeper may show a warning:  
+> *"Notchify is damaged and can't be opened"* or *"macOS cannot verify the developer"*.
 
 To resolve this instantly, open your Mac **Terminal** (press `Cmd + Space`, type `Terminal`, and hit `Enter`) and run this command:
 
 ```bash
-xattr -cr /Applications/Nook.app
+xattr -cr /Applications/Notchify.app
 ```
 
-> **Why this is needed**: This command clears the macOS quarantine attribute (`com.apple.quarantine`) from the application so macOS allows Nook to open immediately.
+> **Why this is needed**: This command clears the macOS quarantine attribute (`com.apple.quarantine`) from the application so macOS allows Notchify to open immediately.
 
 ---
 
 ## ⚙️ Permissions Setup
 
-When running Nook for the first time, grant the necessary permissions:
+When running Notchify for the first time, grant the necessary permissions:
 1. **Camera**: Required for the live Camera Mirror preview (`System Settings > Privacy & Security > Camera`).
-2. **Accessibility**: Allows Nook to position itself accurately at your notch and handle global shortcuts (`System Settings > Privacy & Security > Accessibility`).
+2. **Accessibility**: Allows Notchify to position itself accurately at your notch and handle global shortcuts (`System Settings > Privacy & Security > Accessibility`).
 
 ---
 
 ## 🛠️ Build From Source
 
-To compile Nook manually using Xcode:
+To compile Notchify manually using Xcode:
 
 ```bash
 git clone https://github.com/chrischancode/nook-app.git
 cd nook-app
-xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Release build
+xcodebuild -scheme Nook -configuration Release build
 ```
 
 ---
 
 ## 👤 Credits
 
-- **Done by**: Christian Saguirre
+- **Notchify by**: Christian Saguirre
+- **Inspired to make by**: Nadiane
 - Inspired by modern macOS Dynamic Island experiences.

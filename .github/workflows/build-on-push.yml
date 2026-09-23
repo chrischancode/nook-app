@@ -1,4 +1,4 @@
-name: Build Nook App
+name: Build Notchify App
 
 on:
   push:
@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Nook
+      - name: Build App
         run: |
           set -euo pipefail
           xcodebuild -scheme Nook -configuration Release \
@@ -21,10 +21,12 @@ jobs:
       - name: Compress App
         run: |
           cd build/Build/Products/Release
+          cp -R Nook.app Notchify.app
+          ditto -c -k --sequesterRsrc --keepParent Notchify.app Notchify.zip
           ditto -c -k --sequesterRsrc --keepParent Nook.app Nook.zip
 
-      - name: Upload Nook.zip
+      - name: Upload Notchify.zip
         uses: actions/upload-artifact@v4
         with:
-          name: Nook-App
-          path: build/Build/Products/Release/Nook.zip
+          name: Notchify-App
+          path: build/Build/Products/Release/Notchify.zip
