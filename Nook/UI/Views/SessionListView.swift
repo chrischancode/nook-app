@@ -1,3 +1,4 @@
+import UniformTypeIdentifiers
 //
 //  SessionListView.swift
 //  Nook
@@ -19,15 +20,9 @@ struct SessionListView: View {
     @State private var instanceRowHeight: CGFloat = 0
     @State private var performanceRowHeight: CGFloat = 0
     @State private var musicCardHeight: CGFloat = 0
-    @State private var pomodoroHeight: CGFloat = 0
-    @State private var cameraHeight: CGFloat = 0
-
-    @AppStorage("pomodoroEnabled") private var pomodoroEnabled: Bool = true
-    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
+    @State private var fileShelfHeight: CGFloat = 0
     private var showsPerformanceRow: Bool { isPerformanceMonitorEnabled }
     private var showsMusicCard: Bool { musicManager.isVisible }
-    private var showsPomodoro: Bool { pomodoroEnabled }
-    private var showsCamera: Bool { cameraEnabled }
 
     /// Open the music source app (Apple Music / Spotify / etc.) and dismiss
     /// the notch so the user actually sees the app they just asked for.
@@ -81,23 +76,25 @@ struct SessionListView: View {
                     PerformanceSummaryRow(monitor: performanceMonitor) {
                         viewModel.pushTo(.performance(.overview))
                     }
+                FileShelfView()
+                    .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = if showsPerformanceRow {
+                    PerformanceSummaryRow(monitor: performanceMonitor) {
+                        viewModel.pushTo(.performance(.overview))
+                    } }
                     .measureHeight(using: PerformanceRowHeightKey.self) { performanceRowHeight = $0 }
                 }
-                
-                if showsPomodoro {
-                    PomodoroCardView()
-                        .measureHeight(using: PomodoroHeightKey.self) { pomodoroHeight = $0 }
                 }
-                
-                if showsCamera {
-                    CameraCardView()
-                        .measureHeight(using: CameraHeightKey.self) { cameraHeight = $0 }
                 }
             } else {
                 if showsPerformanceRow {
                     PerformanceSummaryRow(monitor: performanceMonitor) {
                         viewModel.pushTo(.performance(.overview))
                     }
+                FileShelfView()
+                    .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = if showsPerformanceRow {
+                    PerformanceSummaryRow(monitor: performanceMonitor) {
+                        viewModel.pushTo(.performance(.overview))
+                    } }
                     .measureHeight(using: PerformanceRowHeightKey.self) { performanceRowHeight = $0 }
                 }
 
@@ -108,15 +105,7 @@ struct SessionListView: View {
                     )
                     .measureHeight(using: MusicCardHeightKey.self) { musicCardHeight = $0 }
                 }
-                
-                if showsPomodoro {
-                    PomodoroCardView()
-                        .measureHeight(using: PomodoroHeightKey.self) { pomodoroHeight = $0 }
                 }
-                
-                if showsCamera {
-                    CameraCardView()
-                        .measureHeight(using: CameraHeightKey.self) { cameraHeight = $0 }
                 }
             }
 
@@ -140,10 +129,7 @@ struct SessionListView: View {
         .onChange(of: musicCardHeight) { _, _ in
             syncLayoutMetrics()
         }
-        .onChange(of: pomodoroHeight) { _, _ in
-            syncLayoutMetrics()
-        }
-        .onChange(of: cameraHeight) { _, _ in
+        .onChange(of: fileShelfHeight) { _, _ in
             syncLayoutMetrics()
         }
         .onChange(of: instanceRowHeight) { _, _ in
@@ -331,22 +317,15 @@ private struct MusicCardHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
-}
 
-private struct PomodoroHeightKey: PreferenceKey {
+private struct FileShelfHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
-
-private struct CameraHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
+}
+}
 }
 
 private struct PerformanceRowHeightKey: PreferenceKey {
@@ -395,13 +374,8 @@ private extension SessionListView {
         if abs(viewModel.instancesPageMusicCardHeight - musicCardHeight) > 0.5 {
             viewModel.instancesPageMusicCardHeight = musicCardHeight
         }
-
-        if abs(viewModel.instancesPagePomodoroHeight - pomodoroHeight) > 0.5 {
-            viewModel.instancesPagePomodoroHeight = pomodoroHeight
-        }
-
-        if abs(viewModel.instancesPageCameraHeight - cameraHeight) > 0.5 {
-            viewModel.instancesPageCameraHeight = cameraHeight
+        if abs(viewModel.instancesPageFileShelfHeight - fileShelfHeight) > 0.5 {
+            viewModel.instancesPageFileShelfHeight = fileShelfHeight
         }
     }
 }
@@ -906,3 +880,175 @@ struct TerminalButton: View {
         .buttonStyle(.plain)
     }
 }
+
+
+
+
+
+class FileShelfManager: ObservableObject {
+    static let shared = FileShelfManager()
+    
+    @Published var files: [URL] = []
+    
+    func addFile(url: URL) {
+        if !files.contains(url) {
+            files.append(url)
+        }
+    }
+    
+    func removeFile(url: URL) {
+        files.removeAll(where: { $0 == url })
+    }
+    
+    func clearAll() {
+        files.removeAll()
+    }
+    
+    func airDropFile(url: URL) {
+        let service = NSSharingService(named: .sendViaAirDrop)
+        service?.perform(withItems: [url])
+    }
+}
+
+struct FileShelfView: View {
+    @ObservedObject var manager = FileShelfManager.shared
+    @State private var isDropTargeted = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("File Shelf")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+                
+                Spacer()
+                
+                if !manager.files.isEmpty {
+                    Button(action: {
+                        manager.clearAll()
+                    }) {
+                        Text("Clear")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hover in
+                        if hover { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            
+            if !manager.files.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(manager.files, id: \.self) { fileURL in
+                            FileItemView(url: fileURL, onRemove: {
+                                manager.removeFile(url: fileURL)
+                            }, onAirDrop: {
+                                manager.airDropFile(url: fileURL)
+                            })
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                }
+                .frame(height: 70)
+            } else {
+                VStack(spacing: 6) {
+                    Image(systemName: "tray.and.arrow.down")
+                        .font(.system(size: 20))
+                        .foregroundColor(isDropTargeted ? .white : .white.opacity(0.4))
+                    Text("Drag files here to temporarily hold them")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(isDropTargeted ? .white : .white.opacity(0.4))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 70)
+                .background(isDropTargeted ? Color.white.opacity(0.1) : Color.white.opacity(0.03))
+                .cornerRadius(12)
+                .padding(.horizontal, 12)
+            }
+        }
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.2))
+        .cornerRadius(16)
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            for provider in providers {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (item, error) in
+                    if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                        DispatchQueue.main.async {
+                            manager.addFile(url: url)
+                        }
+                    }
+                }
+            }
+            return true
+        }
+    }
+}
+
+struct FileItemView: View {
+    let url: URL
+    let onRemove: () -> Void
+    let onAirDrop: () -> Void
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            ZStack(alignment: .topTrailing) {
+                if let nsImage = NSWorkspace.shared.icon(forFile: url.path) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 32, height: 32)
+                } else {
+                    Image(systemName: "doc")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white.opacity(0.8))
+                        .frame(width: 32, height: 32)
+                }
+                
+                if isHovered {
+                    VStack(spacing: 2) {
+                        Button(action: onRemove) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white)
+                                .background(Circle().fill(Color.black.opacity(0.6)))
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Button(action: onAirDrop) {
+                            Image(systemName: "airplayaudio.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(.blue)
+                                .background(Circle().fill(Color.black.opacity(0.6)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .offset(x: 10, y: -10)
+                }
+            }
+            
+            Text(url.lastPathComponent)
+                .font(.system(size: 9))
+                .foregroundColor(.white.opacity(0.8))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(width: 54)
+        }
+        .padding(8)
+        .background(Color.white.opacity(isHovered ? 0.15 : 0.08))
+        .cornerRadius(8)
+        .onHover { hover in
+            isHovered = hover
+            if hover { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+        .onDrag {
+            let provider = NSItemProvider(contentsOf: url) ?? NSItemProvider()
+            return provider
+        }
+    }
+}
+

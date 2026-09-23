@@ -99,13 +99,10 @@ class NotchViewModel: ObservableObject {
     @Published var instancesPageSessionCount: Int = 0
     @Published var instancesPageShowsPerformance: Bool = false
     @Published var instancesPageShowsMusic: Bool = false
-    @Published var instancesPageShowsPomodoro: Bool = false
-    @Published var instancesPageShowsCamera: Bool = false
     @Published var instancesPageRowHeight: CGFloat = 0
     @Published var instancesPagePerformanceRowHeight: CGFloat = 0
     @Published var instancesPageMusicCardHeight: CGFloat = 0
-    @Published var instancesPagePomodoroHeight: CGFloat = 0
-    @Published var instancesPageCameraHeight: CGFloat = 0
+    @Published var instancesPageFileShelfHeight: CGFloat = 0
     @Published var animatedTopCornerRadius: CGFloat = 6
     @Published var animatedBottomCornerRadius: CGFloat = 12
     /// Extra width beyond device notch for closed state activity indicators (music, processing, etc.)
@@ -167,7 +164,7 @@ class NotchViewModel: ObservableObject {
         case .chat:
             // Large size for chat view
             return CGSize(
-                width: min(screenRect.width * 0.5, 600),
+                width: min(screenRect.width * 0.4, 380),
                 height: 580
             )
         case .menu:
@@ -196,7 +193,7 @@ class NotchViewModel: ObservableObject {
             let raw = menuContentHeight + actualHeaderHeight + 12
             let maxHeight = max(0, geometry.windowHeight - panelBottomMargin)
             return CGSize(
-                width: min(screenRect.width * 0.4, 480),
+                width: min(screenRect.width * 0.4, 380),
                 height: min(raw, maxHeight)
             )
         case .shortcuts:
@@ -227,7 +224,7 @@ class NotchViewModel: ObservableObject {
             )
             let maxHeight = max(0, geometry.windowHeight - panelBottomMargin)
             return CGSize(
-                width: min(screenRect.width * 0.4, 480),
+                width: min(screenRect.width * 0.4, 380),
                 height: min(raw, maxHeight)
             )
         case .agents:
@@ -235,7 +232,7 @@ class NotchViewModel: ObservableObject {
             let raw = agentsContentHeight + headerHeight + 12
             let maxHeight = max(0, geometry.windowHeight - panelBottomMargin)
             return CGSize(
-                width: min(screenRect.width * 0.4, 480),
+                width: min(screenRect.width * 0.4, 380),
                 height: min(raw, maxHeight)
             )
         case .performanceSettings:
@@ -243,17 +240,17 @@ class NotchViewModel: ObservableObject {
             let raw = performanceSettingsContentHeight + headerHeight + 12
             let maxHeight = max(0, geometry.windowHeight - panelBottomMargin)
             return CGSize(
-                width: min(screenRect.width * 0.4, 480),
+                width: min(screenRect.width * 0.4, 380),
                 height: min(raw, maxHeight)
             )
         case .performance(let section):
             return CGSize(
-                width: min(screenRect.width * 0.4, 480),
+                width: min(screenRect.width * 0.4, 380),
                 height: performanceHeight(for: section)
             )
         case .instances:
             return CGSize(
-                width: min(screenRect.width * 0.4, 480),
+                width: min(screenRect.width * 0.4, 380),
                 height: instancesPageOpenedHeight
             )
         }
@@ -310,17 +307,11 @@ class NotchViewModel: ObservableObject {
         let musicBlockHeight: CGFloat = instancesPageShowsMusic
             ? resolvedMusicCardHeight + InstancesPageLayout.contentSpacing
             : 0
-        let pomodoroBlockHeight: CGFloat = instancesPageShowsPomodoro
-            ? resolvedPomodoroHeight + InstancesPageLayout.contentSpacing
-            : 0
-        let cameraBlockHeight: CGFloat = instancesPageShowsCamera
-            ? resolvedCameraHeight + InstancesPageLayout.contentSpacing
-            : 0
-
+        let fileShelfBlockHeight = instancesPageFileShelfHeight + InstancesPageLayout.contentSpacing
         // AI features removed
         let contentHeight: CGFloat = 0
 
-        return chromeHeight + performanceBlockHeight + musicBlockHeight + pomodoroBlockHeight + cameraBlockHeight + contentHeight
+        return chromeHeight + performanceBlockHeight + musicBlockHeight + fileShelfBlockHeight + contentHeight
     }
 
     private var resolvedRowHeight: CGFloat {
@@ -330,15 +321,6 @@ class NotchViewModel: ObservableObject {
     private var resolvedMusicCardHeight: CGFloat {
         max(instancesPageMusicCardHeight, InstancesPageLayout.fallbackMusicBlockHeight - InstancesPageLayout.contentSpacing)
     }
-
-    private var resolvedPomodoroHeight: CGFloat {
-        max(instancesPagePomodoroHeight, 58)
-    }
-    
-    private var resolvedCameraHeight: CGFloat {
-        max(instancesPageCameraHeight, 58)
-    }
-
     private var resolvedPerformanceRowHeight: CGFloat {
         max(instancesPagePerformanceRowHeight, InstancesPageLayout.fallbackPerformanceRowHeight)
     }
@@ -718,7 +700,7 @@ class NotchViewModel: ObservableObject {
     }
 
     /// Total focusable items in the menu page
-    let menuItemCount: Int = 14
+    let menuItemCount: Int = 12
     /// Total focusable items in the shortcuts page (Back + action rows + Restore)
     var shortcutsItemCount: Int { 1 + ShortcutAction.allCases.count + 1 }
     /// Whether the Claude dir picker inside the Agents page is expanded.
@@ -791,3 +773,7 @@ class NotchViewModel: ObservableObject {
         }
     }
 }
+
+
+
+

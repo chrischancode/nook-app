@@ -26,8 +26,6 @@ struct NotchMenuView: View {
     @AppStorage(AppSettings.notchAppearanceStyleKey) private var notchAppearanceStyleRaw = NotchAppearanceStyle.adaptiveArtwork.rawValue
     @AppStorage(AppSettings.musicEdgeGlowEnabledKey) private var musicEdgeGlowEnabled = true
     @AppStorage(AppSettings.vibeGlowEnabledKey) private var vibeGlowEnabled = false
-    @AppStorage("pomodoroEnabled") private var pomodoroEnabled: Bool = true
-    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
 
     /// Compile-time layout for the menu page. 13 visible rows + 5
     /// dividers (Back, divider, Screen, Sound, Agents..., Performance...,
@@ -168,33 +166,12 @@ struct NotchMenuView: View {
 
                 // System settings
                 MenuToggleRow(
-                    icon: "timer",
-                    label: "Pomodoro Timer",
-                    isOn: pomodoroEnabled,
-                    primaryTextColor: primaryTextColor,
-                    secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 8
-                ) {
-                    pomodoroEnabled.toggle()
-                }
-                
-                MenuToggleRow(
-                    icon: "camera",
-                    label: "Camera Mirror",
-                    isOn: cameraEnabled,
-                    primaryTextColor: primaryTextColor,
-                    secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 9
-                ) {
-                    cameraEnabled.toggle()
-                }
-                MenuToggleRow(
                     icon: "power",
                     label: "Launch at Login",
                     isOn: launchAtLogin,
                     primaryTextColor: primaryTextColor,
                     secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 10
+                    isFocused: viewModel.settingsFocusedIndex == 8
                 ) {
                     do {
                         if launchAtLogin {
@@ -209,7 +186,7 @@ struct NotchMenuView: View {
                     }
                 }
 
-                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 11)
+                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 9)
 
                 Divider()
                     .background(separatorColor)
@@ -220,7 +197,7 @@ struct NotchMenuView: View {
                     label: "Star on GitHub",
                     trailingLabel: appVersion,
                     primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 12
+                    isFocused: viewModel.settingsFocusedIndex == 10
                 ) {
                     if let url = URL(string: "https://github.com/oa1mgo/nook") {
                         NSWorkspace.shared.open(url)
@@ -237,7 +214,7 @@ struct NotchMenuView: View {
                     trailingLabel: "⌘Q",
                     isDestructive: true,
                     primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 13
+                    isFocused: viewModel.settingsFocusedIndex == 11
                 ) {
                     NSApplication.shared.terminate(nil)
                 }
@@ -319,9 +296,8 @@ struct NotchMenuView: View {
         case 5: toggleAppearancePickerFromKeyboard()
         case 6: musicEdgeGlowEnabled.toggle()
         case 7: vibeGlowEnabled.toggle()
-        case 8: pomodoroEnabled.toggle()
-        case 9: cameraEnabled.toggle()
-        case 10:
+        
+        case 8:
             do {
                 if launchAtLogin {
                     try SMAppService.mainApp.unregister()
@@ -333,9 +309,9 @@ struct NotchMenuView: View {
             } catch {
                 print("Failed to toggle launch at login: $error")
             }
-        case 11: break // Accessibility is read-only
-        case 12: NSWorkspace.shared.open(URL(string: "https://github.com/chrischancode/nook-app")!)
-        case 13: NSApplication.shared.terminate(nil)
+        case 9: break // Accessibility is read-only
+        case 10: NSWorkspace.shared.open(URL(string: "https://github.com/chrischancode/nook-app")!)
+        case 11: NSApplication.shared.terminate(nil)
         default: break
         }
     }
@@ -1049,6 +1025,7 @@ struct AppearanceStylePickerRow: View {
 //  feedback loop eliminated by switching to font-metric row heights in
 //  SettingsPageLayout.swift. Panel height = PageLayout.staticHeight +
 //  PickerLayout.expandedHeight, all compile-time, no measurement.)
+
 
 
 
