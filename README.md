@@ -23,10 +23,12 @@
 ## ⚡ Features
 
 - 📁 **File Shelf & Storage**: Drag and drop files to hold them temporarily in your notch drawer with live, high-resolution thumbnail previews. Drag them out anytime to Finder, Discord, Slack, or Mail.
+- 📝 **Quick Notes (Full Width)**: Seamless full-width notebook drawer for quick jotting, auto-saved continuously with 1-click export to macOS **Notes.app**.
 - 📡 **Instant AirDrop**: Drop files into the AirDrop zone or tab to send them immediately via macOS native AirDrop.
+- ⏱️ **Pomodoro Timer**: Integrated focus & break session countdown with live indicators and completion chimes.
 - 🪞 **Live Camera Mirror**: Integrated real-time mirror flipped horizontally (`scaleEffect(x: -1, y: 1)`) with an in-drawer power switch.
 - 🎵 **Mini Music Player**: Persistent audio control widget for Apple Music, Spotify, and more. Displays current song, album art, and 1-tap play/pause.
-- 📸 **Quick Actions**: One-click **Capture** (opens macOS Screenshot utility) and **Lock** (puts display to sleep).
+- 📸 **Smart Quick Actions**: Customizable top buttons (choose any combination of **Capture**, **Lock**, or **Pomodoro** in Settings). Clicking Capture automatically hides the notch drawer before screenshotting.
 - 🖱️ **Auto-Glide Notch**: Dragging files towards the top of your screen automatically opens the notch drawer smoothly.
 
 ---

@@ -19,6 +19,7 @@ struct SessionListView: View {
     @State private var cameraHeight: CGFloat = 0
 
     @AppStorage("cameraEnabled") private var cameraEnabled: Bool = false
+    @AppStorage("storageSelectedTab") private var selectedTab: String = "files"
     private var showsMusicCard: Bool { musicManager.isVisible }
     private var showsCamera: Bool { cameraEnabled }
 
@@ -60,15 +61,24 @@ struct SessionListView: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            StorageShelfColumnView()
-                .frame(minWidth: 0, maxWidth: .infinity)
-            MediaCameraColumnView(
-                musicManager: musicManager,
-                cameraEnabled: $cameraEnabled,
-                onOpenMusicSource: handleOpenMusicSource
-            )
-            .frame(minWidth: 0, maxWidth: .infinity)
+        Group {
+            if selectedTab == "notes" {
+                QuickNotesFullView(
+                    viewModel: viewModel,
+                    selectedTab: $selectedTab
+                )
+            } else {
+                HStack(spacing: 8) {
+                    StorageShelfColumnView(viewModel: viewModel)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                    MediaCameraColumnView(
+                        musicManager: musicManager,
+                        cameraEnabled: $cameraEnabled,
+                        onOpenMusicSource: handleOpenMusicSource
+                    )
+                    .frame(minWidth: 0, maxWidth: .infinity)
+                }
+            }
         }
         .frame(height: 148)
         .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = $0 }
@@ -82,6 +92,9 @@ struct SessionListView: View {
             syncLayoutMetrics()
         }
         .onChange(of: cameraEnabled) { _, _ in
+            syncLayoutMetrics()
+        }
+        .onChange(of: selectedTab) { _, _ in
             syncLayoutMetrics()
         }
     }
@@ -914,6 +927,458 @@ final class FileThumbnailLoader: ObservableObject {
     }
 }
 
+// MARK: - Quick Action Types
+
+enum QuickActionType: String, CaseIterable, Identifiable {
+    case capture = "capture"
+    case lock = "lock"
+    case pomodoro = "pomodoro"
+    
+    var id: String { rawValue }
+    
+    var title: String {
+        switch self {
+        case .capture: return "Capture"
+        case .lock: return "Lock"
+        case .pomodoro: return "Pomodoro"
+        }
+    }
+    
+    var iconName: String {
+        switch self {
+        case .capture: return "camera.viewfinder"
+        case .lock: return "lock.fill"
+        case .pomodoro: return "timer"
+        }
+    }
+}
+
+// MARK: - Pomodoro Manager
+
+enum PomodoroState: Equatable {
+    case idle
+    case focus(secondsRemaining: Int)
+    case breakTime(secondsRemaining: Int)
+}
+
+final class PomodoroManager: ObservableObject {
+    static let shared = PomodoroManager()
+    
+    @Published var state: PomodoroState = .idle
+    @AppStorage("pomodoroFocusMinutes") var focusMinutes: Int = 25
+    @AppStorage("pomodoroBreakMinutes") var breakMinutes: Int = 5
+    
+    private var timer: Timer?
+    
+    private init() {}
+    
+    var isRunning: Bool {
+        if case .idle = state { return false }
+        return true
+    }
+    
+    var isBreak: Bool {
+        if case .breakTime = state { return true }
+        return false
+    }
+    
+    var timeRemainingString: String {
+        switch state {
+        case .idle:
+            return "\(focusMinutes)m"
+        case .focus(let s), .breakTime(let s):
+            let m = s / 60
+            let sec = s % 60
+            return String(format: "%02d:%02d", m, sec)
+        }
+    }
+    
+    func toggle() {
+        if isRunning {
+            stop()
+        } else {
+            startFocus()
+        }
+    }
+    
+    func startFocus() {
+        state = .focus(secondsRemaining: max(1, focusMinutes) * 60)
+        startTimer()
+    }
+    
+    func startBreak() {
+        state = .breakTime(secondsRemaining: max(1, breakMinutes) * 60)
+        startTimer()
+    }
+    
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        state = .idle
+    }
+    
+    private func startTimer() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.tick()
+        }
+    }
+    
+    private func tick() {
+        switch state {
+        case .idle:
+            timer?.invalidate()
+        case .focus(let s):
+            if s > 1 {
+                state = .focus(secondsRemaining: s - 1)
+            } else {
+                stop()
+                NSSound(named: "Glass")?.play()
+            }
+        case .breakTime(let s):
+            if s > 1 {
+                state = .breakTime(secondsRemaining: s - 1)
+            } else {
+                stop()
+                NSSound(named: "Glass")?.play()
+            }
+        }
+    }
+}
+
+// MARK: - Quick Action Button View
+
+struct QuickActionButtonView: View {
+    let actionType: QuickActionType
+    var viewModel: NotchViewModel? = nil
+    @ObservedObject private var pomodoro = PomodoroManager.shared
+    
+    var body: some View {
+        Button(action: handleAction) {
+            HStack(spacing: 3) {
+                Image(systemName: iconName)
+                    .font(.system(size: 8.5))
+                Text(buttonLabel)
+                    .font(.system(size: 9, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundColor(textColor)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4.5)
+            .background(backgroundColor)
+            .cornerRadius(7)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var iconName: String {
+        switch actionType {
+        case .capture:
+            return "camera.viewfinder"
+        case .lock:
+            return "lock.fill"
+        case .pomodoro:
+            return pomodoro.isBreak ? "cup.and.saucer.fill" : "timer"
+        }
+    }
+    
+    private var buttonLabel: String {
+        switch actionType {
+        case .capture:
+            return "Capture"
+        case .lock:
+            return "Lock"
+        case .pomodoro:
+            return pomodoro.isRunning ? pomodoro.timeRemainingString : "Pomodoro"
+        }
+    }
+    
+    private var textColor: Color {
+        switch actionType {
+        case .pomodoro:
+            if pomodoro.isRunning {
+                return pomodoro.isBreak ? Color.green : Color.orange
+            }
+            return .white.opacity(0.85)
+        default:
+            return .white.opacity(0.85)
+        }
+    }
+    
+    private var backgroundColor: Color {
+        if actionType == .pomodoro && pomodoro.isRunning {
+            return pomodoro.isBreak ? Color.green.opacity(0.18) : Color.orange.opacity(0.18)
+        }
+        return Color.white.opacity(0.08)
+    }
+    
+    private func handleAction() {
+        switch actionType {
+        case .capture:
+            // 1. Hide the notch drawer immediately
+            viewModel?.notchClose()
+            // 2. Open Screenshot utility after notch collapses
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Screenshot.app"))
+            }
+        case .lock:
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+            task.arguments = ["displaysleepnow"]
+            try? task.run()
+        case .pomodoro:
+            pomodoro.toggle()
+        }
+    }
+}
+
+// MARK: - Quick Notes Manager
+
+class QuickNotesManager {
+    static let shared = QuickNotesManager()
+    
+    func exportToAppleNotes(text: String, completion: @escaping (Bool) -> Void) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            completion(false)
+            return
+        }
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            let escaped = trimmed
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\r\n", with: "<br>")
+                .replacingOccurrences(of: "\n", with: "<br>")
+            
+            let scriptSource = """
+            tell application "Notes"
+                tell default account
+                    make new note at folder "Notes" with properties {body: "<div><strong>Notchify Quick Note:</strong></div><div>\(escaped)</div>"}
+                end tell
+            end tell
+            """
+            
+            var error: NSDictionary?
+            if let script = NSAppleScript(source: scriptSource) {
+                script.executeAndReturnError(&error)
+                let ok = (error == nil)
+                DispatchQueue.main.async {
+                    completion(ok)
+                }
+            } else {
+                DispatchQueue.main.async {
+                    completion(false)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Quick Notes Full View (2-Column Span)
+
+struct QuickNotesFullView: View {
+    var viewModel: NotchViewModel
+    @Binding var selectedTab: String
+    @ObservedObject var fileManager = FileShelfManager.shared
+    @AppStorage("quickActionButton1") private var actionButton1Raw: String = QuickActionType.capture.rawValue
+    @AppStorage("quickActionButton2") private var actionButton2Raw: String = QuickActionType.lock.rawValue
+    @AppStorage("notchifyQuickNotes") private var notesText: String = ""
+    @State private var showSavedAlert = false
+    @State private var isShelfTargeted = false
+    @State private var isAirDropTargeted = false
+    
+    private var action1: QuickActionType {
+        QuickActionType(rawValue: actionButton1Raw) ?? .capture
+    }
+    
+    private var action2: QuickActionType {
+        QuickActionType(rawValue: actionButton2Raw) ?? .lock
+    }
+    
+    var body: some View {
+        VStack(spacing: 5) {
+            // Top Bar: Action Buttons (left) + Tab Selector (center) + Note Tools (right)
+            HStack(spacing: 6) {
+                // Action Buttons on left
+                HStack(spacing: 4) {
+                    QuickActionButtonView(actionType: action1, viewModel: viewModel)
+                    QuickActionButtonView(actionType: action2, viewModel: viewModel)
+                }
+                .frame(width: 140)
+                
+                // Tabs in center
+                HStack(spacing: 3) {
+                    Button(action: { selectedTab = "files" }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "tray.fill")
+                                .font(.system(size: 8))
+                            Text(fileManager.files.isEmpty ? "Shelf" : "Shelf (\(fileManager.files.count))")
+                                .font(.system(size: 9, weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(.white.opacity(0.5))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule().fill(isShelfTargeted ? Color.white.opacity(0.15) : Color.clear)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
+                        selectedTab = "files"
+                        fileManager.loadAndAddFiles(from: providers)
+                        return true
+                    }
+                    
+                    Button(action: { selectedTab = "airdrop" }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "airplayaudio")
+                                .font(.system(size: 8))
+                            Text("AirDrop")
+                                .font(.system(size: 9, weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(.white.opacity(0.5))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule().fill(isAirDropTargeted ? Color.blue.opacity(0.3) : Color.clear)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
+                        selectedTab = "airdrop"
+                        fileManager.sendAirDrop(from: providers)
+                        return true
+                    }
+                    
+                    Button(action: { selectedTab = "notes" }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "note.text")
+                                .font(.system(size: 8))
+                            Text("Notes")
+                                .font(.system(size: 9, weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.white.opacity(0.2)))
+                    }
+                    .buttonStyle(.plain)
+                }
+                
+                Spacer()
+                
+                // Right Tools: Save to Notes, Copy, Clear
+                HStack(spacing: 4) {
+                    if showSavedAlert {
+                        HStack(spacing: 2) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 8.5))
+                                .foregroundColor(.green)
+                            Text("Saved to Notes!")
+                                .font(.system(size: 8.5, weight: .semibold))
+                                .foregroundColor(.green)
+                        }
+                        .transition(.opacity)
+                    } else {
+                        Button(action: saveToNotesApp) {
+                            HStack(spacing: 2) {
+                                Image(systemName: "square.and.pencil")
+                                    .font(.system(size: 8))
+                                Text("Save to Notes")
+                                    .font(.system(size: 8.5, weight: .medium))
+                            }
+                            .foregroundColor(.white.opacity(0.85))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.white.opacity(0.08))
+                            .cornerRadius(5)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
+                    Button(action: copyToClipboard) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 8.5))
+                            .foregroundColor(.white.opacity(0.6))
+                            .padding(4)
+                            .background(Color.white.opacity(0.06))
+                            .cornerRadius(5)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy notes")
+                    
+                    if !notesText.isEmpty {
+                        Button(action: { notesText = "" }) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 8.5))
+                                .foregroundColor(.white.opacity(0.45))
+                                .padding(4)
+                                .background(Color.white.opacity(0.06))
+                                .cornerRadius(5)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Clear notes")
+                    }
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.top, 4)
+            
+            // Full-width Text Editor
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.white.opacity(0.04))
+                
+                if notesText.isEmpty {
+                    Text("Type quick notes, ideas, todo lists... (Auto-saved continuously)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.28))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 7)
+                }
+                
+                TextEditor(text: $notesText)
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.92))
+                    .scrollContentBackground(.hidden)
+                    .padding(4)
+            }
+            .padding(.horizontal, 6)
+            .padding(.bottom, 6)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white.opacity(0.06))
+        .cornerRadius(13)
+        .overlay(
+            RoundedRectangle(cornerRadius: 13)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+    
+    private func saveToNotesApp() {
+        QuickNotesManager.shared.exportToAppleNotes(text: notesText) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showSavedAlert = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSavedAlert = false
+                }
+            }
+        }
+    }
+    
+    private func copyToClipboard() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(notesText, forType: .string)
+    }
+}
+
 // MARK: - File Shelf Manager
 
 class FileShelfManager: ObservableObject {
@@ -950,15 +1415,85 @@ class FileShelfManager: ObservableObject {
         let service = NSSharingService(named: .sendViaAirDrop)
         service?.perform(withItems: [url])
     }
+
+    func extractURLs(from providers: [NSItemProvider], completion: @escaping ([URL]) -> Void) {
+        var collectedURLs: [URL] = []
+        let group = DispatchGroup()
+        
+        for provider in providers {
+            group.enter()
+            if provider.canLoadObject(ofClass: URL.self) {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    if let url = url {
+                        DispatchQueue.main.async {
+                            collectedURLs.append(url)
+                        }
+                    }
+                    group.leave()
+                }
+            } else {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    var resolved: URL?
+                    if let url = item as? URL {
+                        resolved = url
+                    } else if let url = item as? NSURL {
+                        resolved = url as URL
+                    } else if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                        resolved = url
+                    } else if let data = item as? Data, let str = String(data: data, encoding: .utf8), let url = URL(string: str) {
+                        resolved = url
+                    }
+                    if let resolved = resolved {
+                        DispatchQueue.main.async {
+                            collectedURLs.append(resolved)
+                        }
+                    }
+                    group.leave()
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
+            completion(collectedURLs)
+        }
+    }
+
+    func loadAndAddFiles(from providers: [NSItemProvider]) {
+        extractURLs(from: providers) { [weak self] urls in
+            guard !urls.isEmpty else { return }
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                self?.addFiles(urls)
+            }
+        }
+    }
+
+    func sendAirDrop(from providers: [NSItemProvider]) {
+        extractURLs(from: providers) { urls in
+            guard !urls.isEmpty else { return }
+            let service = NSSharingService(named: .sendViaAirDrop)
+            service?.perform(withItems: urls)
+        }
+    }
 }
 
 // MARK: - Storage & AirDrop Column (Left)
 
 struct StorageShelfColumnView: View {
+    var viewModel: NotchViewModel? = nil
     @ObservedObject var manager = FileShelfManager.shared
     @AppStorage("storageSelectedTab") private var selectedTab: String = "files"
+    @AppStorage("quickActionButton1") private var actionButton1Raw: String = QuickActionType.capture.rawValue
+    @AppStorage("quickActionButton2") private var actionButton2Raw: String = QuickActionType.lock.rawValue
     @State private var isShelfTargeted = false
     @State private var isAirDropTargeted = false
+    
+    private var action1: QuickActionType {
+        QuickActionType(rawValue: actionButton1Raw) ?? .capture
+    }
+    
+    private var action2: QuickActionType {
+        QuickActionType(rawValue: actionButton2Raw) ?? .lock
+    }
     
     private var isAirDropMode: Bool {
         selectedTab == "airdrop"
@@ -966,46 +1501,10 @@ struct StorageShelfColumnView: View {
     
     var body: some View {
         VStack(spacing: 5) {
-            // Top Action Buttons: Small Capture & Lock Buttons
+            // Top Action Buttons: Customizable Quick Action Buttons
             HStack(spacing: 5) {
-                Button(action: {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Screenshot.app"))
-                }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "camera.viewfinder")
-                            .font(.system(size: 8.5))
-                        Text("Capture")
-                            .font(.system(size: 9, weight: .medium))
-                            .lineLimit(1)
-                    }
-                    .foregroundColor(.white.opacity(0.85))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4.5)
-                    .background(Color.white.opacity(0.08))
-                    .cornerRadius(7)
-                }
-                .buttonStyle(.plain)
-
-                Button(action: {
-                    let task = Process()
-                    task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
-                    task.arguments = ["displaysleepnow"]
-                    try? task.run()
-                }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 8.5))
-                        Text("Lock")
-                            .font(.system(size: 9, weight: .medium))
-                            .lineLimit(1)
-                    }
-                    .foregroundColor(.white.opacity(0.85))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4.5)
-                    .background(Color.white.opacity(0.08))
-                    .cornerRadius(7)
-                }
-                .buttonStyle(.plain)
+                QuickActionButtonView(actionType: action1, viewModel: viewModel)
+                QuickActionButtonView(actionType: action2, viewModel: viewModel)
             }
             .padding(.horizontal, 5)
             .padding(.top, 5)
@@ -1023,18 +1522,18 @@ struct StorageShelfColumnView: View {
                                 .font(.system(size: 9, weight: .semibold))
                                 .lineLimit(1)
                         }
-                        .foregroundColor(!isAirDropMode ? .white : .white.opacity(0.5))
+                        .foregroundColor(selectedTab == "files" ? .white : .white.opacity(0.5))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
                         .background(
                             Capsule()
-                                .fill(!isAirDropMode ? Color.white.opacity(0.2) : (isShelfTargeted ? Color.white.opacity(0.12) : Color.clear))
+                                .fill(selectedTab == "files" ? Color.white.opacity(0.2) : (isShelfTargeted ? Color.white.opacity(0.12) : Color.clear))
                         )
                     }
                     .buttonStyle(.plain)
                     .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
                         selectedTab = "files"
-                        loadAndAddFiles(from: providers)
+                        manager.loadAndAddFiles(from: providers)
                         return true
                     }
 
@@ -1047,24 +1546,43 @@ struct StorageShelfColumnView: View {
                                 .font(.system(size: 9, weight: .semibold))
                                 .lineLimit(1)
                         }
-                        .foregroundColor(isAirDropMode ? .white : .white.opacity(0.5))
+                        .foregroundColor(selectedTab == "airdrop" ? .white : .white.opacity(0.5))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
                         .background(
                             Capsule()
-                                .fill(isAirDropMode ? Color.white.opacity(0.2) : (isAirDropTargeted ? Color.blue.opacity(0.3) : Color.clear))
+                                .fill(selectedTab == "airdrop" ? Color.white.opacity(0.2) : (isAirDropTargeted ? Color.blue.opacity(0.3) : Color.clear))
                         )
                     }
                     .buttonStyle(.plain)
                     .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
                         selectedTab = "airdrop"
-                        sendAirDrop(from: providers)
+                        manager.sendAirDrop(from: providers)
                         return true
                     }
 
+                    // Notes tab
+                    Button(action: { selectedTab = "notes" }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "note.text")
+                                .font(.system(size: 8))
+                            Text("Notes")
+                                .font(.system(size: 9, weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(selectedTab == "notes" ? .white : .white.opacity(0.5))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(selectedTab == "notes" ? Color.white.opacity(0.2) : Color.clear)
+                        )
+                    }
+                    .buttonStyle(.plain)
+
                     Spacer()
 
-                    if !isAirDropMode && !manager.files.isEmpty {
+                    if selectedTab == "files" && !manager.files.isEmpty {
                         Button(action: { manager.clearAll() }) {
                             Text("Clear")
                                 .font(.system(size: 8.5, weight: .medium))
@@ -1095,7 +1613,7 @@ struct StorageShelfColumnView: View {
                     .padding(.horizontal, 5)
                     .padding(.bottom, 5)
                     .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
-                        sendAirDrop(from: providers)
+                        manager.sendAirDrop(from: providers)
                         return true
                     }
                     .onTapGesture {
@@ -1145,7 +1663,7 @@ struct StorageShelfColumnView: View {
                         .padding(.horizontal, 5)
                         .padding(.bottom, 5)
                         .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
-                            loadAndAddFiles(from: providers)
+                            manager.loadAndAddFiles(from: providers)
                             return true
                         }
                     } else {
@@ -1167,7 +1685,7 @@ struct StorageShelfColumnView: View {
                         .padding(.horizontal, 5)
                         .padding(.bottom, 5)
                         .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
-                            loadAndAddFiles(from: providers)
+                            manager.loadAndAddFiles(from: providers)
                             return true
                         }
                     }
@@ -1181,65 +1699,6 @@ struct StorageShelfColumnView: View {
             RoundedRectangle(cornerRadius: 13)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
-    }
-
-    private func extractURLs(from providers: [NSItemProvider], completion: @escaping ([URL]) -> Void) {
-        var collectedURLs: [URL] = []
-        let group = DispatchGroup()
-        
-        for provider in providers {
-            group.enter()
-            if provider.canLoadObject(ofClass: URL.self) {
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    if let url = url {
-                        DispatchQueue.main.async {
-                            collectedURLs.append(url)
-                        }
-                    }
-                    group.leave()
-                }
-            } else {
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    var resolved: URL?
-                    if let url = item as? URL {
-                        resolved = url
-                    } else if let url = item as? NSURL {
-                        resolved = url as URL
-                    } else if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
-                        resolved = url
-                    } else if let data = item as? Data, let str = String(data: data, encoding: .utf8), let url = URL(string: str) {
-                        resolved = url
-                    }
-                    if let resolved = resolved {
-                        DispatchQueue.main.async {
-                            collectedURLs.append(resolved)
-                        }
-                    }
-                    group.leave()
-                }
-            }
-        }
-        
-        group.notify(queue: .main) {
-            completion(collectedURLs)
-        }
-    }
-
-    private func loadAndAddFiles(from providers: [NSItemProvider]) {
-        extractURLs(from: providers) { urls in
-            guard !urls.isEmpty else { return }
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                manager.addFiles(urls)
-            }
-        }
-    }
-
-    private func sendAirDrop(from providers: [NSItemProvider]) {
-        extractURLs(from: providers) { urls in
-            guard !urls.isEmpty else { return }
-            let service = NSSharingService(named: .sendViaAirDrop)
-            service?.perform(withItems: urls)
-        }
     }
 
     private func triggerAirDropPicker() {

@@ -23,34 +23,27 @@ struct NotchMenuView: View {
     @State private var launchAtLogin: Bool = false
     @State private var didAppear = false
     @State private var isAppearancePickerExpanded = false
+    @State private var isActionButtonsPickerExpanded = false
     @AppStorage(AppSettings.notchAppearanceStyleKey) private var notchAppearanceStyleRaw = NotchAppearanceStyle.adaptiveArtwork.rawValue
     @AppStorage(AppSettings.musicEdgeGlowEnabledKey) private var musicEdgeGlowEnabled = true
     @AppStorage(AppSettings.vibeGlowEnabledKey) private var vibeGlowEnabled = false
     @AppStorage("cameraEnabled") private var cameraEnabled: Bool = false
 
-    /// Compile-time layout for the menu page. 13 visible rows + 5
-    /// dividers (Back, divider, Screen, Sound, Agents..., Performance...,
-    /// Keyboard..., divider, Appearance, Music Edge, Vibe, divider,
-    /// Launch, Accessibility, divider, Star, divider, Quit).
+    /// Compile-time layout for the menu page. 13 visible rows + 4 dividers
     static var pageLayout: PageLayout {
-        PageLayout(rowCount: 12, dividerCount: 4)
+        PageLayout(rowCount: 13, dividerCount: 4)
     }
 
     /// Total height the menu VStack should report, given which pickers
     /// are currently expanded. Drives `viewModel.menuContentHeight`
     /// through `onChange` — no GeometryReader feedback.
-    ///
-    /// The "base" height (no picker expanded) is `PageLayout.staticHeight`,
-    /// derived from `menuRowHeight` (font-metric from 13pt medium label
-    /// + 20pt vertical padding = 35.31pt) — bit-for-bit identical to
-    /// what SwiftUI allocates per row, so the formula matches
-    /// `ScrollView.contentSize` at every frame.
     private var menuContentHeight: CGFloat {
         let base = Self.pageLayout.staticHeight
         let expandedHeights: [CGFloat] = [
             screenSelector.isPickerExpanded ? ScreenPickerRow.pickerLayout.expandedHeight : 0,
             soundSelector.isPickerExpanded ? SoundPickerRow.pickerLayout.expandedHeight : 0,
-            isAppearancePickerExpanded ? AppearanceStylePickerRow.pickerLayout.expandedHeight : 0
+            isAppearancePickerExpanded ? AppearanceStylePickerRow.pickerLayout.expandedHeight : 0,
+            isActionButtonsPickerExpanded ? ActionButtonsPickerRow.pickerLayout.expandedHeight : 0
         ]
         let total = base + expandedHeights.reduce(0, +)
         return total
@@ -165,14 +158,25 @@ struct NotchMenuView: View {
                     .background(separatorColor)
                     .padding(.vertical, 4)
 
-                // System settings
+                // Actions & System settings
+                ActionButtonsPickerRow(
+                    primaryTextColor: primaryTextColor,
+                    secondaryTextColor: secondaryTextColor,
+                    isFocused: viewModel.settingsFocusedIndex == 8,
+                    isExpanded: $isActionButtonsPickerExpanded,
+                    onToggle: { _, _ in
+                        markExplicitSet()
+                        viewModel.menuContentHeight = menuContentHeight
+                    }
+                )
+
                 MenuToggleRow(
                     icon: "camera",
                     label: "Camera Mirror",
                     isOn: cameraEnabled,
                     primaryTextColor: primaryTextColor,
                     secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 8
+                    isFocused: viewModel.settingsFocusedIndex == 9
                 ) {
                     cameraEnabled.toggle()
                 }
@@ -183,7 +187,7 @@ struct NotchMenuView: View {
                     isOn: launchAtLogin,
                     primaryTextColor: primaryTextColor,
                     secondaryTextColor: secondaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 9
+                    isFocused: viewModel.settingsFocusedIndex == 10
                 ) {
                     do {
                         if launchAtLogin {
@@ -198,7 +202,7 @@ struct NotchMenuView: View {
                     }
                 }
 
-                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 10)
+                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 11)
 
                 Divider()
                     .background(separatorColor)
@@ -210,7 +214,7 @@ struct NotchMenuView: View {
                     trailingLabel: "?Q",
                     isDestructive: true,
                     primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 11
+                    isFocused: viewModel.settingsFocusedIndex == 12
                 ) {
                     NSApplication.shared.terminate(nil)
                 }
@@ -1012,6 +1016,152 @@ struct AppearanceStylePickerRow: View {
             return "Dynamic music colors"
         case .pureBlack:
             return "Solid black"
+        }
+    }
+}
+
+// MARK: - Action Buttons Picker Row
+
+struct ActionButtonsPickerRow: View {
+    @AppStorage("quickActionButton1") private var actionButton1Raw: String = QuickActionType.capture.rawValue
+    @AppStorage("quickActionButton2") private var actionButton2Raw: String = QuickActionType.lock.rawValue
+    @AppStorage("pomodoroFocusMinutes") private var focusMinutes: Int = 25
+    @AppStorage("pomodoroBreakMinutes") private var breakMinutes: Int = 5
+
+    var primaryTextColor: Color = .white
+    var secondaryTextColor: Color = .white.opacity(0.4)
+    var isFocused: Bool = false
+    @Binding var isExpanded: Bool
+    var onToggle: ((Bool, CGFloat) -> Void)? = nil
+
+    static var pickerLayout: PickerLayout {
+        PickerLayout(
+            rowCount: 4,
+            rowHeight: settingsSubPickerRowHeight
+        )
+    }
+
+    private var action1: QuickActionType {
+        QuickActionType(rawValue: actionButton1Raw) ?? .capture
+    }
+
+    private var action2: QuickActionType {
+        QuickActionType(rawValue: actionButton2Raw) ?? .lock
+    }
+
+    var body: some View {
+        ExpandableSettingsRow(
+            icon: "hand.tap",
+            label: "Action Buttons",
+            trailingText: "\(action1.title) & \(action2.title)",
+            primaryTextColor: primaryTextColor,
+            secondaryTextColor: secondaryTextColor,
+            isFocused: isFocused,
+            isExpanded: $isExpanded,
+            targetHeight: Self.pickerLayout.expandedHeight,
+            onToggle: onToggle
+        ) {
+            VStack(spacing: 2) {
+                // Subrow 1: Left Button
+                HStack {
+                    Text("Left Button")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(primaryTextColor)
+                    Spacer()
+                    HStack(spacing: 3) {
+                        ForEach(QuickActionType.allCases) { item in
+                            Button(action: { actionButton1Raw = item.rawValue }) {
+                                Text(item.title)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(action1 == item ? .white : secondaryTextColor)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2.5)
+                                    .background(
+                                        Capsule().fill(action1 == item ? Color.white.opacity(0.2) : Color.clear)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .frame(height: settingsSubPickerRowHeight)
+
+                // Subrow 2: Right Button
+                HStack {
+                    Text("Right Button")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(primaryTextColor)
+                    Spacer()
+                    HStack(spacing: 3) {
+                        ForEach(QuickActionType.allCases) { item in
+                            Button(action: { actionButton2Raw = item.rawValue }) {
+                                Text(item.title)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(action2 == item ? .white : secondaryTextColor)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2.5)
+                                    .background(
+                                        Capsule().fill(action2 == item ? Color.white.opacity(0.2) : Color.clear)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .frame(height: settingsSubPickerRowHeight)
+
+                // Subrow 3: Focus Duration
+                HStack {
+                    Text("Focus Duration")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(primaryTextColor)
+                    Spacer()
+                    HStack(spacing: 3) {
+                        ForEach([15, 25, 45], id: \.self) { mins in
+                            Button(action: { focusMinutes = mins }) {
+                                Text("\(mins)m")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(focusMinutes == mins ? .white : secondaryTextColor)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2.5)
+                                    .background(
+                                        Capsule().fill(focusMinutes == mins ? Color.white.opacity(0.2) : Color.clear)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .frame(height: settingsSubPickerRowHeight)
+
+                // Subrow 4: Break Duration
+                HStack {
+                    Text("Break Duration")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(primaryTextColor)
+                    Spacer()
+                    HStack(spacing: 3) {
+                        ForEach([5, 10, 15], id: \.self) { mins in
+                            Button(action: { breakMinutes = mins }) {
+                                Text("\(mins)m")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(breakMinutes == mins ? .white : secondaryTextColor)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2.5)
+                                    .background(
+                                        Capsule().fill(breakMinutes == mins ? Color.white.opacity(0.2) : Color.clear)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .frame(height: settingsSubPickerRowHeight)
+            }
         }
     }
 }
