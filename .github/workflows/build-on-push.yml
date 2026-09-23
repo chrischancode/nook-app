@@ -21,7 +21,7 @@ jobs:
       - name: Compress App
         run: |
           cd build/Build/Products/Release
-          zip -r Nook.zip Nook.app
+          ditto -c -k --sequesterRsrc --keepParent Nook.app Nook.zip
 
       - name: Upload Nook.zip
         uses: actions/upload-artifact@v4
