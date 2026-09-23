@@ -303,12 +303,9 @@ class NotchViewModel: ObservableObject {
 
     private var instancesPageOpenedHeight: CGFloat {
         let chromeHeight = InstancesPageLayout.emptyHeight - InstancesPageLayout.emptyStateHeight
-        let musicBlockHeight: CGFloat = instancesPageShowsMusic
-            ? resolvedMusicCardHeight + InstancesPageLayout.contentSpacing
-            : 0
-        let workspaceBlockHeight: CGFloat = max(instancesPageFileShelfHeight, 104) + InstancesPageLayout.contentSpacing
+        let workspaceBlockHeight: CGFloat = max(instancesPageFileShelfHeight, 148) + InstancesPageLayout.contentSpacing
 
-        return chromeHeight + musicBlockHeight + workspaceBlockHeight
+        return chromeHeight + workspaceBlockHeight
     }
 
     private var resolvedCameraHeight: CGFloat {

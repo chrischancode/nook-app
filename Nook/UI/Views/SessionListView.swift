@@ -65,50 +65,26 @@ struct SessionListView: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            if showsMusicCard {
-                MusicCardView(
-                    musicManager: musicManager,
-                    onOpenSourceApp: handleOpenMusicSource
-                )
-                .measureHeight(using: MusicCardHeightKey.self) { musicCardHeight = $0 }
-            }
-
-            // 2-Column Workspace: Left = Storage (Files & AirDrop), Right = Camera Mirror
-            HStack(spacing: 8) {
-                StorageShelfColumnView()
-                CameraMirrorColumnView(cameraEnabled: $cameraEnabled)
-            }
-            .frame(height: 104)
-            .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = $0 }
-
-            // AI features removed by user request
+        HStack(spacing: 8) {
+            StorageShelfColumnView()
+            MediaCameraColumnView(
+                musicManager: musicManager,
+                cameraEnabled: $cameraEnabled,
+                onOpenMusicSource: handleOpenMusicSource
+            )
         }
+        .frame(height: 148)
+        .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = $0 }
         .onAppear {
             syncLayoutMetrics()
         }
         .onChange(of: musicManager.isVisible) { _, _ in
             syncLayoutMetrics()
         }
-        .onChange(of: isPerformanceMonitorEnabled) { _, _ in
-            syncLayoutMetrics()
-        }
-        .onChange(of: musicAbovePerformance) { _, _ in
-            syncLayoutMetrics()
-        }
-        .onChange(of: performanceRowHeight) { _, _ in
-            syncLayoutMetrics()
-        }
-        .onChange(of: musicCardHeight) { _, _ in
-            syncLayoutMetrics()
-        }
         .onChange(of: fileShelfHeight) { _, _ in
             syncLayoutMetrics()
         }
-        .onChange(of: cameraHeight) { _, _ in
-            syncLayoutMetrics()
-        }
-        .onChange(of: instanceRowHeight) { _, _ in
+        .onChange(of: cameraEnabled) { _, _ in
             syncLayoutMetrics()
         }
     }
@@ -898,70 +874,69 @@ class FileShelfManager: ObservableObject {
 
 // MARK: - Storage & AirDrop Column (Left)
 
-enum StorageTabMode {
-    case files
-    case airdrop
-}
-
 struct StorageShelfColumnView: View {
     @ObservedObject var manager = FileShelfManager.shared
-    @State private var mode: StorageTabMode = .files
+    @AppStorage("storageSelectedTab") private var selectedTab: String = "files"
     @State private var isShelfTargeted = false
     @State private var isAirDropTargeted = false
+    
+    private var isAirDropMode: Bool {
+        selectedTab == "airdrop"
+    }
     
     var body: some View {
         VStack(spacing: 4) {
             // Tab Selector Header
             HStack(spacing: 3) {
                 // Shelf tab
-                Button(action: { mode = .files }) {
+                Button(action: { selectedTab = "files" }) {
                     HStack(spacing: 3) {
                         Image(systemName: "tray.fill")
                             .font(.system(size: 8))
                         Text(manager.files.isEmpty ? "Shelf" : "Shelf (\(manager.files.count))")
                             .font(.system(size: 9, weight: .semibold))
                     }
-                    .foregroundColor(mode == .files ? .white : .white.opacity(0.5))
+                    .foregroundColor(!isAirDropMode ? .white : .white.opacity(0.5))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(
                         Capsule()
-                            .fill(mode == .files ? Color.white.opacity(0.2) : (isShelfTargeted ? Color.white.opacity(0.12) : Color.clear))
+                            .fill(!isAirDropMode ? Color.white.opacity(0.2) : (isShelfTargeted ? Color.white.opacity(0.12) : Color.clear))
                     )
                 }
                 .buttonStyle(.plain)
                 .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
-                    mode = .files
+                    selectedTab = "files"
                     loadAndAddFiles(from: providers)
                     return true
                 }
 
                 // AirDrop tab
-                Button(action: { mode = .airdrop }) {
+                Button(action: { selectedTab = "airdrop" }) {
                     HStack(spacing: 3) {
                         Image(systemName: "airplayaudio")
                             .font(.system(size: 8))
                         Text("AirDrop")
                             .font(.system(size: 9, weight: .semibold))
                     }
-                    .foregroundColor(mode == .airdrop ? .white : .white.opacity(0.5))
+                    .foregroundColor(isAirDropMode ? .white : .white.opacity(0.5))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(
                         Capsule()
-                            .fill(mode == .airdrop ? Color.white.opacity(0.2) : (isAirDropTargeted ? Color.blue.opacity(0.3) : Color.clear))
+                            .fill(isAirDropMode ? Color.white.opacity(0.2) : (isAirDropTargeted ? Color.blue.opacity(0.3) : Color.clear))
                     )
                 }
                 .buttonStyle(.plain)
                 .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
-                    mode = .airdrop
+                    selectedTab = "airdrop"
                     sendAirDrop(from: providers)
                     return true
                 }
 
                 Spacer()
 
-                if mode == .files && !manager.files.isEmpty {
+                if !isAirDropMode && !manager.files.isEmpty {
                     Button(action: { manager.clearAll() }) {
                         Text("Clear")
                             .font(.system(size: 8.5, weight: .medium))
@@ -974,11 +949,11 @@ struct StorageShelfColumnView: View {
             .padding(.top, 5)
 
             // Content Area
-            if mode == .airdrop {
+            if isAirDropMode {
                 // AirDrop Instant Send Zone
                 VStack(spacing: 3) {
                     Image(systemName: "airplayaudio")
-                        .font(.system(size: 18, weight: .regular))
+                        .font(.system(size: 20, weight: .regular))
                         .foregroundColor(isAirDropTargeted ? .blue : .white.opacity(0.75))
 
                     Text(isAirDropTargeted ? "Release to AirDrop!" : "Drop files to AirDrop")
@@ -990,7 +965,6 @@ struct StorageShelfColumnView: View {
                 .background(isAirDropTargeted ? Color.blue.opacity(0.18) : Color.white.opacity(0.04))
                 .cornerRadius(10)
                 .padding(.horizontal, 5)
-                .padding(.bottom, 5)
                 .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
                     sendAirDrop(from: providers)
                     return true
@@ -1012,7 +986,6 @@ struct StorageShelfColumnView: View {
                         .padding(.horizontal, 5)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.bottom, 5)
                     .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
                         loadAndAddFiles(from: providers)
                         return true
@@ -1020,7 +993,7 @@ struct StorageShelfColumnView: View {
                 } else {
                     VStack(spacing: 3) {
                         Image(systemName: "tray.and.arrow.down")
-                            .font(.system(size: 16, weight: .regular))
+                            .font(.system(size: 18, weight: .regular))
                             .foregroundColor(isShelfTargeted ? .white : .white.opacity(0.45))
 
                         Text(isShelfTargeted ? "Release to hold!" : "Drop files to hold")
@@ -1032,13 +1005,54 @@ struct StorageShelfColumnView: View {
                     .background(isShelfTargeted ? Color.white.opacity(0.12) : Color.white.opacity(0.04))
                     .cornerRadius(10)
                     .padding(.horizontal, 5)
-                    .padding(.bottom, 5)
                     .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
                         loadAndAddFiles(from: providers)
                         return true
                     }
                 }
             }
+
+            // Bottom Action Buttons: Small Capture & Lock Buttons
+            HStack(spacing: 5) {
+                Button(action: {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Screenshot.app"))
+                }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "camera.viewfinder")
+                            .font(.system(size: 8.5))
+                        Text("Capture")
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4.5)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(7)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: {
+                    let task = Process()
+                    task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+                    task.arguments = ["displaysleepnow"]
+                    try? task.run()
+                }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 8.5))
+                        Text("Lock")
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4.5)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(7)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 5)
+            .padding(.bottom, 5)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.white.opacity(0.06))
@@ -1151,98 +1165,170 @@ struct CompactFileItemView: View {
     }
 }
 
-// MARK: - Camera Mirror Column (Right)
+// MARK: - Media & Camera Mirror Column (Right)
 
-struct CameraMirrorColumnView: View {
+struct MediaCameraColumnView: View {
+    @ObservedObject var musicManager: MusicManager
     @Binding var cameraEnabled: Bool
+    let onOpenMusicSource: () -> Void
     @ObservedObject var cameraManager = CameraManager.shared
     
+    private var primaryLineText: String {
+        let title = musicManager.playbackState.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? "Not Playing" : title
+    }
+
+    private var secondaryLineText: String {
+        let artist = musicManager.playbackState.artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        return artist.isEmpty ? "" : artist
+    }
+
     var body: some View {
-        ZStack {
-            if cameraEnabled {
-                // Live Camera Feed Flipped as a True Mirror
-                if let cgImage = cameraManager.frame {
-                    Image(cgImage, scale: 1.0, orientation: .up, label: Text("Mirror"))
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .scaleEffect(x: -1, y: 1) // FLIPPED HORIZONTALLY AS A REAL MIRROR!
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipped()
-                } else {
-                    ZStack {
-                        Color.black.opacity(0.3)
-                        ProgressView()
-                            .scaleEffect(0.6)
-                    }
-                }
-                
-                // Top Overlay Controls
-                VStack {
-                    HStack {
-                        HStack(spacing: 3) {
-                            Circle()
-                                .fill(Color.green)
-                                .frame(width: 5, height: 5)
-                            Text("Mirror")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color.black.opacity(0.4))
-                        .clipShape(Capsule())
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                cameraEnabled = false
+        VStack(spacing: 5) {
+            // Mini Audio / Music Strip (shown when music is active)
+            if musicManager.isVisible {
+                HStack(spacing: 6) {
+                    Button(action: onOpenMusicSource) {
+                        Group {
+                            if let image = musicManager.albumArt {
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                            } else {
+                                Image(systemName: musicManager.fallbackSymbolName)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.white.opacity(0.7))
                             }
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 13))
-                                .foregroundColor(.white.opacity(0.85))
-                                .background(Circle().fill(Color.black.opacity(0.5)))
                         }
-                        .buttonStyle(.plain)
+                        .frame(width: 24, height: 24)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
                     }
-                    .padding(5)
+                    .buttonStyle(.plain)
                     
-                    Spacer()
-                }
-            } else {
-                // Camera Mirror Off - Turn On / Quick Setting Tile
-                VStack(spacing: 5) {
-                    Image(systemName: "video.fill")
-                        .font(.system(size: 18))
-                        .foregroundColor(.white.opacity(0.45))
-                    
-                    Text("Camera Mirror")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white.opacity(0.75))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(primaryLineText)
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                        
+                        if !secondaryLineText.isEmpty {
+                            Text(secondaryLineText)
+                                .font(.system(size: 8.5))
+                                .foregroundColor(.white.opacity(0.55))
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     
                     Button(action: {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            cameraEnabled = true
-                        }
+                        musicManager.togglePlayPause()
                     }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "power")
-                                .font(.system(size: 8, weight: .bold))
-                            Text("Turn On")
-                                .font(.system(size: 9, weight: .semibold))
-                        }
-                        .foregroundColor(.black)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 3.5)
-                        .background(Color.white.opacity(0.95))
-                        .clipShape(Capsule())
+                        Image(systemName: musicManager.playbackState.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 8.5, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 20, height: 20)
+                            .background(Circle().fill(Color.white.opacity(0.12)))
                     }
                     .buttonStyle(.plain)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.06))
+                .cornerRadius(8)
             }
+            
+            // Prominent Camera Mirror (Flipped horizontally like a real mirror)
+            ZStack {
+                if cameraEnabled {
+                    if let cgImage = cameraManager.frame {
+                        Image(cgImage, scale: 1.0, orientation: .up, label: Text("Mirror"))
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .scaleEffect(x: -1, y: 1) // TRUE HORIZONTAL MIRROR FLIP!
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
+                    } else {
+                        ZStack {
+                            Color.black.opacity(0.4)
+                            ProgressView()
+                                .scaleEffect(0.6)
+                        }
+                    }
+                    
+                    // Live mirror overlay controls
+                    VStack {
+                        HStack {
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 5, height: 5)
+                                Text("Live Mirror")
+                                    .font(.system(size: 8.5, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Capsule())
+                            
+                            Spacer()
+                            
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    cameraEnabled = false
+                                }
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.white.opacity(0.85))
+                                    .background(Circle().fill(Color.black.opacity(0.5)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(5)
+                        
+                        Spacer()
+                    }
+                } else {
+                    // Camera Off Setting / Viewfinder Tile
+                    VStack(spacing: 5) {
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white.opacity(0.45))
+                        
+                        Text("Camera Mirror")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white.opacity(0.75))
+                        
+                        Button(action: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                cameraEnabled = true
+                            }
+                        }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "power")
+                                    .font(.system(size: 8, weight: .bold))
+                                Text("Turn On")
+                                    .font(.system(size: 9.5, weight: .semibold))
+                            }
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 3.5)
+                            .background(Color.white.opacity(0.95))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.white.opacity(0.04))
+            .cornerRadius(10)
+            .clipped()
         }
+        .padding(5)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.white.opacity(0.06))
         .cornerRadius(13)
