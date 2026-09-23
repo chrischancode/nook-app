@@ -671,11 +671,17 @@ struct NotchView: View {
 
                 dispatchGroup.notify(queue: .main) {
                     if !droppedURLs.isEmpty {
-                        let service = NSSharingService(named: .sendViaAirDrop)
-                        service?.perform(withItems: droppedURLs)
+                        FileShelfManager.shared.addFiles(droppedURLs)
                     }
                 }
                 return true
+            }
+            .onChange(of: isDropTargeted) { _, isTargeted in
+                if isTargeted && viewModel.status != .opened {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        viewModel.notchOpen()
+                    }
+                }
             }
     }
 

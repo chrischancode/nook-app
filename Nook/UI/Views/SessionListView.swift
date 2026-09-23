@@ -1,13 +1,8 @@
-import UniformTypeIdentifiers
-//
-//  SessionListView.swift
-//  Nook
-//
-//  Minimal instances list matching Dynamic Island aesthetic
-//
-
 import Combine
+import ImageIO
+import QuickLookThumbnailing
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SessionListView: View {
     @ObservedObject var sessionMonitor: SessionMonitor
@@ -849,19 +844,102 @@ struct TerminalButton: View {
 
 // MARK: - File Shelf Manager
 
+// MARK: - File Thumbnail Loader
+
+final class FileThumbnailLoader: ObservableObject {
+    @Published var thumbnail: NSImage?
+    private static let cache = NSCache<NSURL, NSImage>()
+
+    init(url: URL) {
+        if let cached = Self.cache.object(forKey: url as NSURL) {
+            self.thumbnail = cached
+            return
+        }
+        
+        // Immediate fallback: system icon so UI is instantly responsive
+        self.thumbnail = NSWorkspace.shared.icon(forFile: url.path)
+        loadThumbnail(for: url)
+    }
+
+    private func loadThumbnail(for url: URL) {
+        let targetSize = CGSize(width: 96, height: 96)
+        let ext = url.pathExtension.lowercased()
+
+        // Fast path for images via ImageIO (PNG, JPG, HEIC, WEBP, GIF, TIFF, etc.)
+        if ["jpg", "jpeg", "png", "heic", "webp", "gif", "tiff", "bmp", "ico"].contains(ext) {
+            DispatchQueue.global(qos: .userInteractive).async {
+                if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
+                    let maxDimension = max(targetSize.width, targetSize.height) * 2.0
+                    let options: [CFString: Any] = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceShouldCacheImmediately: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: maxDimension
+                    ]
+                    if let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+                        let img = NSImage(cgImage: cgThumb, size: NSSize(width: 36, height: 36))
+                        Self.cache.setObject(img, forKey: url as NSURL)
+                        DispatchQueue.main.async {
+                            self.thumbnail = img
+                        }
+                        return
+                    }
+                }
+                self.requestQuickLook(for: url, targetSize: targetSize)
+            }
+            return
+        }
+
+        // QuickLook Thumbnailing for documents, PDFs, videos, audio, etc.
+        requestQuickLook(for: url, targetSize: targetSize)
+    }
+
+    private func requestQuickLook(for url: URL, targetSize: CGSize) {
+        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+        let request = QLThumbnailGenerator.Request(
+            fileAt: url,
+            size: targetSize,
+            scale: scale,
+            representationTypes: .thumbnail
+        )
+        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, _ in
+            if let cgImage = representation?.cgImage {
+                let img = NSImage(cgImage: cgImage, size: NSSize(width: 36, height: 36))
+                Self.cache.setObject(img, forKey: url as NSURL)
+                DispatchQueue.main.async {
+                    self.thumbnail = img
+                }
+            }
+        }
+    }
+}
+
+// MARK: - File Shelf Manager
+
 class FileShelfManager: ObservableObject {
     static let shared = FileShelfManager()
     
     @Published var files: [URL] = []
     
     func addFile(url: URL) {
-        if !files.contains(url) {
-            files.append(url)
+        let standardized = url.standardizedFileURL
+        if !files.contains(where: { $0.standardizedFileURL == standardized }) {
+            files.append(standardized)
+        }
+    }
+
+    func addFiles(_ newURLs: [URL]) {
+        for url in newURLs {
+            let standardized = url.standardizedFileURL
+            if !files.contains(where: { $0.standardizedFileURL == standardized }) {
+                files.append(standardized)
+            }
         }
     }
     
     func removeFile(url: URL) {
-        files.removeAll(where: { $0 == url })
+        let standardized = url.standardizedFileURL
+        files.removeAll(where: { $0.standardizedFileURL == standardized })
     }
     
     func clearAll() {
@@ -1030,13 +1108,41 @@ struct StorageShelfColumnView: View {
                             HStack(spacing: 5) {
                                 ForEach(manager.files, id: \.self) { fileURL in
                                     CompactFileItemView(url: fileURL, onRemove: {
-                                        manager.removeFile(url: fileURL)
+                                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                            manager.removeFile(url: fileURL)
+                                        }
                                     })
                                 }
+
+                                // Quick drop target tile at end of shelf
+                                VStack(spacing: 2) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(isShelfTargeted ? .white : .white.opacity(0.35))
+                                    Text("Drop")
+                                        .font(.system(size: 7.5, weight: .medium))
+                                        .foregroundColor(isShelfTargeted ? .white : .white.opacity(0.35))
+                                }
+                                .frame(width: 38, height: 38)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(isShelfTargeted ? Color.white.opacity(0.18) : Color.white.opacity(0.03))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(
+                                            isShelfTargeted ? Color.white.opacity(0.6) : Color.white.opacity(0.1),
+                                            style: StrokeStyle(lineWidth: 1, dash: [3])
+                                        )
+                                )
                             }
                             .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(isShelfTargeted ? Color.white.opacity(0.06) : Color.clear)
+                        .cornerRadius(10)
+                        .padding(.horizontal, 5)
                         .padding(.bottom, 5)
                         .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
                             loadAndAddFiles(from: providers)
@@ -1046,11 +1152,13 @@ struct StorageShelfColumnView: View {
                         VStack(spacing: 3) {
                             Image(systemName: "tray.and.arrow.down")
                                 .font(.system(size: 18, weight: .regular))
-                            .foregroundColor(isShelfTargeted ? .white : .white.opacity(0.45))
+                                .foregroundColor(isShelfTargeted ? .white : .white.opacity(0.45))
+                                .offset(y: isShelfTargeted ? -2 : 0)
+                                .animation(.easeInOut(duration: 0.2), value: isShelfTargeted)
 
                             Text(isShelfTargeted ? "Release to hold!" : "Drop files to hold")
                                 .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.white.opacity(0.55))
+                                .foregroundColor(isShelfTargeted ? .white : .white.opacity(0.55))
                                 .lineLimit(1)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1075,35 +1183,62 @@ struct StorageShelfColumnView: View {
         )
     }
 
-    private func loadAndAddFiles(from providers: [NSItemProvider]) {
+    private func extractURLs(from providers: [NSItemProvider], completion: @escaping ([URL]) -> Void) {
+        var collectedURLs: [URL] = []
+        let group = DispatchGroup()
+        
         for provider in providers {
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (item, error) in
-                if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
-                    DispatchQueue.main.async {
-                        manager.addFile(url: url)
+            group.enter()
+            if provider.canLoadObject(ofClass: URL.self) {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    if let url = url {
+                        DispatchQueue.main.async {
+                            collectedURLs.append(url)
+                        }
                     }
+                    group.leave()
                 }
+            } else {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    var resolved: URL?
+                    if let url = item as? URL {
+                        resolved = url
+                    } else if let url = item as? NSURL {
+                        resolved = url as URL
+                    } else if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                        resolved = url
+                    } else if let data = item as? Data, let str = String(data: data, encoding: .utf8), let url = URL(string: str) {
+                        resolved = url
+                    }
+                    if let resolved = resolved {
+                        DispatchQueue.main.async {
+                            collectedURLs.append(resolved)
+                        }
+                    }
+                    group.leave()
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
+            completion(collectedURLs)
+        }
+    }
+
+    private func loadAndAddFiles(from providers: [NSItemProvider]) {
+        extractURLs(from: providers) { urls in
+            guard !urls.isEmpty else { return }
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                manager.addFiles(urls)
             }
         }
     }
 
     private func sendAirDrop(from providers: [NSItemProvider]) {
-        var collectedURLs: [URL] = []
-        let group = DispatchGroup()
-        for provider in providers {
-            group.enter()
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (item, error) in
-                if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
-                    collectedURLs.append(url)
-                }
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) {
-            if !collectedURLs.isEmpty {
-                let service = NSSharingService(named: .sendViaAirDrop)
-                service?.perform(withItems: collectedURLs)
-            }
+        extractURLs(from: providers) { urls in
+            guard !urls.isEmpty else { return }
+            let service = NSSharingService(named: .sendViaAirDrop)
+            service?.perform(withItems: urls)
         }
     }
 
@@ -1128,51 +1263,82 @@ struct StorageShelfColumnView: View {
     }
 }
 
-// MARK: - Compact File Item View
+// MARK: - Compact File Item View with Rich Thumbnail Preview
 
 struct CompactFileItemView: View {
     let url: URL
     let onRemove: () -> Void
     
+    @StateObject private var loader: FileThumbnailLoader
     @State private var isHovered = false
+    
+    init(url: URL, onRemove: @escaping () -> Void) {
+        self.url = url
+        self.onRemove = onRemove
+        _loader = StateObject(wrappedValue: FileThumbnailLoader(url: url))
+    }
     
     var body: some View {
         VStack(spacing: 2) {
             ZStack(alignment: .topTrailing) {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 28, height: 28)
+                // High-resolution preview / thumbnail
+                Group {
+                    if let thumb = loader.thumbnail {
+                        Image(nsImage: thumb)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                    }
+                }
+                .frame(width: 36, height: 36)
+                .background(Color.white.opacity(0.08))
+                .cornerRadius(7)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7)
+                        .stroke(Color.white.opacity(isHovered ? 0.3 : 0.08), lineWidth: 1)
+                )
+                .clipped()
                 
+                // Hover Remove Button
                 if isHovered {
                     Button(action: onRemove) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 9))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.white)
-                            .background(Circle().fill(Color.black.opacity(0.6)))
+                            .background(Circle().fill(Color.black.opacity(0.75)))
                     }
                     .buttonStyle(.plain)
-                    .offset(x: 5, y: -5)
+                    .offset(x: 4, y: -4)
                 }
             }
+            .scaleEffect(isHovered ? 1.05 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovered)
             
+            // Filename
             Text(url.lastPathComponent)
-                .font(.system(size: 8))
-                .foregroundColor(.white.opacity(0.8))
+                .font(.system(size: 8, weight: .medium))
+                .foregroundColor(isHovered ? .white : .white.opacity(0.75))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(width: 44)
         }
-        .padding(4)
-        .background(Color.white.opacity(isHovered ? 0.15 : 0.05))
-        .cornerRadius(6)
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(isHovered ? 0.12 : 0.02))
+        )
         .onHover { hover in
             isHovered = hover
             if hover { NSCursor.pointingHand.push() } else { NSCursor.pop() }
         }
+        .onTapGesture(count: 2) {
+            NSWorkspace.shared.open(url)
+        }
         .onDrag {
-            let provider = NSItemProvider(contentsOf: url) ?? NSItemProvider()
-            return provider
+            NSItemProvider(object: url as NSURL)
         }
     }
 }
