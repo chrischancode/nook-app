@@ -323,6 +323,7 @@ private struct MusicCardHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
+}
 
 private struct CameraHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -331,14 +332,8 @@ private struct CameraHeightKey: PreferenceKey {
 
 private struct FileShelfHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-    }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {}
 }
-}
-}
-}
-
 private struct PerformanceRowHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
@@ -1066,3 +1061,4 @@ struct FileItemView: View {
         }
     }
 }
+
