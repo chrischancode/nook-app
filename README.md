@@ -5,100 +5,78 @@
 </p>
 
 <p align="center">
-  <strong>A live MacBook notch surface for agents, music, and system status.</strong>
+  <strong>A sleek, compact MacBook notch drawer for storage, quick actions, music, and live camera mirror.</strong>
 </p>
 
 <p align="center">
-  <a href="./readme/README.zh-CN.md">Simplified Chinese</a> ·
-  <a href="https://github.com/oa1mgo/nook-notch/releases/latest">Download latest release</a>
+  <strong>Done by Christian Saguirre</strong>
 </p>
 
 <p align="center">
-  <img src="./readme/img_nook_home.png" alt="Nook home view with performance, music, and agent sessions" width="720" />
+  <a href="https://github.com/chrischancode/nook-app/releases/latest">Download Latest Release</a> ·
+  <a href="https://github.com/chrischancode/nook-app/actions">Builds & Artifacts</a>
 </p>
 
-<p align="center">
-  <img src="./readme/img_nook_settings.png" alt="Nook settings view" width="720" />
-</p>
+---
 
-<p align="center">
-  <img src="./readme/img_nook_compact_music.png" alt="Nook compact music notch" width="225" />
-  <img src="./readme/img_nook_compact_music_artwork.png" alt="Nook compact music notch with artwork" width="225" />
-  <img src="./readme/img_nook_compact_music_glow.png" alt="Nook compact music notch with glow" width="225" />
-</p>
+## ⚡ Features
 
-Nook turns the MacBook notch into a compact desktop control layer. The home view keeps high-signal context in one place: Mac performance, now playing controls, and live AI coding sessions.
+- 📁 **File Shelf & Storage**: Drag and drop files to hold them temporarily in your notch drawer with live, high-resolution thumbnail previews. Drag them out anytime to Finder, Discord, Slack, or Mail.
+- 📡 **Instant AirDrop**: Drop files into the AirDrop zone or tab to send them immediately via macOS native AirDrop.
+- 🪞 **Live Camera Mirror**: Integrated real-time mirror flipped horizontally (`scaleEffect(x: -1, y: 1)`) with an in-drawer power switch.
+- 🎵 **Mini Music Player**: Persistent audio control widget for Apple Music, Spotify, and more. Displays current song, album art, and 1-tap play/pause.
+- 📸 **Quick Actions**: One-click **Capture** (opens macOS Screenshot utility) and **Lock** (puts display to sleep).
+- 🖱️ **Auto-Glide Notch**: Dragging files towards the top of your screen automatically opens the notch drawer smoothly.
 
-## What It Does
+---
 
-| Area | Features |
-| --- | --- |
-| Agent sessions | Monitor Claude Code, Codex, OpenCode, and Cursor from local hook events. |
-| Session detail | Show prompts, thinking, tool calls, tool results, approvals, user questions, completion state, and token usage. |
-| Music | Display artwork, source app, track metadata, progress, play/pause, previous/next, and open-source-app controls. |
-| System status | Surface CPU, memory, battery, and network status with configurable performance detail pages. |
-| Settings | Configure screen selection, notification sound, agent hooks, shortcuts, glow effects, launch at login, and accessibility. |
-| Appearance | Switch between Music dynamic color, macOS 26+ Glass, and pure Black notch styles. |
+## 📥 Quick Download & Installation
 
-## Agent Support
+### Step 1: Download
+- Download the latest `Nook.zip` from **[Releases](https://github.com/chrischancode/nook-app/releases/latest)** or the latest build artifact from **[GitHub Actions](https://github.com/chrischancode/nook-app/actions)**.
 
-Nook normalizes local agent events into a shared session timeline.
+### Step 2: Install
+1. Unzip the downloaded file to find `Nook.app`.
+2. Drag `Nook.app` into your **Applications** folder (`/Applications`).
 
-- Claude Code: hooks, transcript parsing, status tracking, interrupt detection, permission handling, and tmux-aware terminal focus.
-- Codex: hooks, transcript parsing, terminal approval state, compacting and subagent events, and stable completed-session history.
-- OpenCode: event-stream integration with live tool placeholders, user-input state, subagent tracking, and idle/completion transitions.
-- Cursor: session lifecycle, processing/compacting state, thought and response updates, tool calls, and session cleanup.
+---
 
-## Appearance
+## 💻 Terminal Command (Important)
 
-The settings page exposes three notch styles:
+Because Nook is downloaded directly from GitHub rather than the Mac App Store, macOS Gatekeeper may show a warning:  
+> *"Nook is damaged and can't be opened"* or *"macOS cannot verify the developer"*.
 
-- `Music`: uses artwork-derived colors for the expanded notch when music is playing.
-- `Glass`: uses Liquid Glass on macOS 26+ and only appears when supported.
-- `Black`: keeps the expanded notch clean and solid black.
-
-The collapsed notch stays visually quiet; the glass treatment is limited to the expanded panel.
-
-## Install
-
-1. Download the latest `Nook.dmg` from [Releases](https://github.com/oa1mgo/nook-notch/releases/latest).
-2. Drag `Nook.app` into `Applications`.
-3. Open `Nook` from `Applications`.
-
-If macOS blocks the first launch, open `System Settings` -> `Privacy & Security`, allow Nook to run, then open it again.
-
-## Requirements
-
-- macOS 15.6 or later.
-- macOS 26 or later for the Glass appearance option.
-- Claude Code, Codex, OpenCode, or Cursor installed for the matching agent integration.
-- Accessibility permission is recommended for global shortcuts and focus behavior.
-
-## Build From Source
+To resolve this instantly, open your Mac **Terminal** (press `Cmd + Space`, type `Terminal`, and hit `Enter`) and run this command:
 
 ```bash
-xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Debug build
+xattr -cr /Applications/Nook.app
 ```
+
+> **Why this is needed**: This command clears the macOS quarantine attribute (`com.apple.quarantine`) from the application so macOS allows Nook to open immediately.
+
+---
+
+## ⚙️ Permissions Setup
+
+When running Nook for the first time, grant the necessary permissions:
+1. **Camera**: Required for the live Camera Mirror preview (`System Settings > Privacy & Security > Camera`).
+2. **Accessibility**: Allows Nook to position itself accurately at your notch and handle global shortcuts (`System Settings > Privacy & Security > Accessibility`).
+
+---
+
+## 🛠️ Build From Source
+
+To compile Nook manually using Xcode:
 
 ```bash
-xcodebuild test -project Nook.xcodeproj -scheme Nook -configuration Debug -derivedDataPath build/TestDerivedData -destination 'platform=macOS'
+git clone https://github.com/chrischancode/nook-app.git
+cd nook-app
+xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Release build
 ```
 
-See [docs/testing.md](./docs/testing.md) for testing notes.
+---
 
-## Project Map
+## 👤 Credits
 
-- `Nook/Core`: settings, geometry, shortcuts, activity coordination, and view model state.
-- `Nook/Services/Hooks`: hook installers and Unix socket ingress for agent events.
-- `Nook/Services/Session`: transcript parsing, status watching, and session monitoring.
-- `Nook/Services/State`: central session store and tool-event processing.
-- `Nook/Services/Music`: now playing integration, media controls, and artwork color extraction.
-- `Nook/Services/System`: performance sampling.
-- `Nook/UI`: notch shell, session list, chat detail, music, performance, and settings views.
-
-## Acknowledgements
-
-Nook was shaped by ideas from:
-
-- [farouqaldori/claude-island](https://github.com/farouqaldori/claude-island)
-- [TheBoredTeam/boring.notch](https://github.com/TheBoredTeam/boring.notch)
+- **Done by**: Christian Saguirre
+- Inspired by modern macOS Dynamic Island experiences.
