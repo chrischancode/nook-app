@@ -54,7 +54,7 @@ struct NotchView: View {
     @AppStorage(AppSettings.musicEdgeGlowEnabledKey) private var musicEdgeGlowEnabled = true
     @AppStorage(AppSettings.vibeGlowEnabledKey) private var vibeGlowEnabled = false
     @AppStorage(AppSettings.performanceMonitorEnabledKey) private var performanceMonitorEnabled = true
-    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
+    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = false
 
     @Namespace private var activityNamespace
 
@@ -965,7 +965,7 @@ struct NotchView: View {
 
         viewModel.instancesPageHasSessions = hasSessions
         viewModel.instancesPageSessionCount = sessionCount
-        viewModel.instancesPageShowsPerformance = performanceMonitorEnabled
+        viewModel.instancesPageShowsPerformance = true
         viewModel.instancesPageShowsMusic = showsMusic
         viewModel.instancesPageShowsCamera = cameraEnabled
     }

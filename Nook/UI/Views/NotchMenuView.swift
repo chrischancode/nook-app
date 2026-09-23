@@ -26,7 +26,7 @@ struct NotchMenuView: View {
     @AppStorage(AppSettings.notchAppearanceStyleKey) private var notchAppearanceStyleRaw = NotchAppearanceStyle.adaptiveArtwork.rawValue
     @AppStorage(AppSettings.musicEdgeGlowEnabledKey) private var musicEdgeGlowEnabled = true
     @AppStorage(AppSettings.vibeGlowEnabledKey) private var vibeGlowEnabled = false
-    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
+    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = false
 
     /// Compile-time layout for the menu page. 13 visible rows + 5
     /// dividers (Back, divider, Screen, Sound, Agents..., Performance...,

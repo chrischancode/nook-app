@@ -18,13 +18,12 @@ struct SessionListView: View {
     @AppStorage(AppSettings.musicAbovePerformanceKey) private var musicAbovePerformance: Bool = false
 
     @State private var instanceRowHeight: CGFloat = 0
-    @State private var performanceRowHeight: CGFloat = 0
+    @State private var performanceRowHeight: CGFloat = 44
     @State private var musicCardHeight: CGFloat = 0
     @State private var fileShelfHeight: CGFloat = 0
     @State private var cameraHeight: CGFloat = 0
 
-    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
-    private var showsPerformanceRow: Bool { isPerformanceMonitorEnabled }
+    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = false
     private var showsMusicCard: Bool { musicManager.isVisible }
     private var showsCamera: Bool { cameraEnabled }
 
@@ -36,6 +35,26 @@ struct SessionListView: View {
     private func handleOpenMusicSource() {
         musicManager.openSourceApp()
         viewModel.notchClose()
+    }
+
+    private func handleQuickAirDrop() {
+        if !FileShelfManager.shared.files.isEmpty {
+            let service = NSSharingService(named: .sendViaAirDrop)
+            service?.perform(withItems: FileShelfManager.shared.files)
+        } else {
+            let panel = NSOpenPanel()
+            panel.title = "Select Files to AirDrop"
+            panel.prompt = "AirDrop"
+            panel.allowsMultipleSelection = true
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.begin { response in
+                if response == .OK && !panel.urls.isEmpty {
+                    let service = NSSharingService(named: .sendViaAirDrop)
+                    service?.perform(withItems: panel.urls)
+                }
+            }
+        }
     }
 
     private var maxInstancesListHeight: CGFloat {
@@ -67,52 +86,26 @@ struct SessionListView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            if musicAbovePerformance {
-                if showsMusicCard {
-                    MusicCardView(
-                        musicManager: musicManager,
-                        onOpenSourceApp: handleOpenMusicSource
-                    )
-                    .measureHeight(using: MusicCardHeightKey.self) { musicCardHeight = $0 }
-                }
+            if showsMusicCard {
+                MusicCardView(
+                    musicManager: musicManager,
+                    onOpenSourceApp: handleOpenMusicSource
+                )
+                .measureHeight(using: MusicCardHeightKey.self) { musicCardHeight = $0 }
+            }
 
-                if showsPerformanceRow {
-                    PerformanceSummaryRow(monitor: performanceMonitor) {
-                        viewModel.pushTo(.performance(.overview))
-                    }
-                    .measureHeight(using: PerformanceRowHeightKey.self) { performanceRowHeight = $0 }
-                }
-                
-                FileShelfView()
-                    .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = $0 }
-                
-                if showsCamera {
-                    CameraCardView()
-                        .measureHeight(using: CameraHeightKey.self) { cameraHeight = $0 }
-                }
-            } else {
-                if showsPerformanceRow {
-                    PerformanceSummaryRow(monitor: performanceMonitor) {
-                        viewModel.pushTo(.performance(.overview))
-                    }
-                    .measureHeight(using: PerformanceRowHeightKey.self) { performanceRowHeight = $0 }
-                }
-
-                if showsMusicCard {
-                    MusicCardView(
-                        musicManager: musicManager,
-                        onOpenSourceApp: handleOpenMusicSource
-                    )
-                    .measureHeight(using: MusicCardHeightKey.self) { musicCardHeight = $0 }
-                }
-                
-                FileShelfView()
-                    .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = $0 }
-                
-                if showsCamera {
-                    CameraCardView()
-                        .measureHeight(using: CameraHeightKey.self) { cameraHeight = $0 }
-                }
+            QuickActionsBar(
+                cameraEnabled: $cameraEnabled,
+                onAirDrop: handleQuickAirDrop
+            )
+            .measureHeight(using: PerformanceRowHeightKey.self) { performanceRowHeight = $0 }
+            
+            FileShelfView()
+                .measureHeight(using: FileShelfHeightKey.self) { fileShelfHeight = $0 }
+            
+            if showsCamera {
+                CameraCardView()
+                    .measureHeight(using: CameraHeightKey.self) { cameraHeight = $0 }
             }
 
             // AI features removed by user request
@@ -899,6 +892,106 @@ struct TerminalButton: View {
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Quick Actions Bar
+
+struct QuickActionsBar: View {
+    @Binding var cameraEnabled: Bool
+    let onAirDrop: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            // Live Camera Mirror Toggle
+            QuickActionButton(
+                icon: cameraEnabled ? "video.fill" : "video",
+                label: cameraEnabled ? "Mirror On" : "Mirror",
+                isActive: cameraEnabled,
+                action: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        cameraEnabled.toggle()
+                    }
+                }
+            )
+            
+            // AirDrop Action
+            QuickActionButton(
+                icon: "airplayaudio",
+                label: "AirDrop",
+                isActive: false,
+                action: onAirDrop
+            )
+            
+            // Screen Capture
+            QuickActionButton(
+                icon: "camera.viewfinder",
+                label: "Capture",
+                isActive: false,
+                action: {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Screenshot.app"))
+                }
+            )
+            
+            // Lock Screen
+            QuickActionButton(
+                icon: "lock.fill",
+                label: "Lock",
+                isActive: false,
+                action: {
+                    let task = Process()
+                    task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+                    task.arguments = ["displaysleepnow"]
+                    try? task.run()
+                }
+            )
+        }
+        .frame(height: 44)
+    }
+}
+
+struct QuickActionButton: View {
+    let icon: String
+    let label: String
+    var isActive: Bool = false
+    let action: () -> Void
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(isActive ? .black : .white)
+                
+                Text(label)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(isActive ? .black : .white.opacity(0.8))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(
+                        isActive
+                            ? Color.white
+                            : (isHovered ? Color.white.opacity(0.18) : Color.white.opacity(0.08))
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(
+                        isActive ? Color.white.opacity(0.3) : Color.white.opacity(0.08),
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hover in
+            isHovered = hover
+            if hover { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
     }
 }
 
