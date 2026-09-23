@@ -26,6 +26,8 @@
     <true/>
     <key>NSCameraUsageDescription</key>
     <string>Nook needs camera access to display the Camera Mirror.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Notchify needs permission to save quick notes to the Apple Notes app.</string>
 </dict>
 </plist>
 

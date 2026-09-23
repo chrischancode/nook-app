@@ -1053,23 +1053,32 @@ struct QuickActionButtonView: View {
     let actionType: QuickActionType
     var viewModel: NotchViewModel? = nil
     @ObservedObject private var pomodoro = PomodoroManager.shared
+    @State private var isHovered = false
     
     var body: some View {
         Button(action: handleAction) {
             HStack(spacing: 3) {
                 Image(systemName: iconName)
-                    .font(.system(size: 8.5))
-                Text(buttonLabel)
-                    .font(.system(size: 9, weight: .medium))
-                    .lineLimit(1)
+                    .font(.system(size: 10.5, weight: .medium))
+                if actionType == .pomodoro && pomodoro.isRunning {
+                    Text(pomodoro.timeRemainingString)
+                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
+                }
             }
             .foregroundColor(textColor)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 4.5)
+            .frame(height: 24)
             .background(backgroundColor)
             .cornerRadius(7)
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(isHovered ? Color.white.opacity(0.25) : Color.white.opacity(0.06), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(tooltipText)
     }
     
     private var iconName: String {
@@ -1083,14 +1092,17 @@ struct QuickActionButtonView: View {
         }
     }
     
-    private var buttonLabel: String {
+    private var tooltipText: String {
         switch actionType {
         case .capture:
-            return "Capture"
+            return "Capture Screenshot"
         case .lock:
-            return "Lock"
+            return "Lock Screen (Sleep Display)"
         case .pomodoro:
-            return pomodoro.isRunning ? pomodoro.timeRemainingString : "Pomodoro"
+            if pomodoro.isRunning {
+                return "Pomodoro: \(pomodoro.timeRemainingString) remaining (Click to cancel)"
+            }
+            return "Start Pomodoro Timer (\(pomodoro.focusMinutes)m Focus)"
         }
     }
     
@@ -1108,7 +1120,7 @@ struct QuickActionButtonView: View {
     
     private var backgroundColor: Color {
         if actionType == .pomodoro && pomodoro.isRunning {
-            return pomodoro.isBreak ? Color.green.opacity(0.18) : Color.orange.opacity(0.18)
+            return pomodoro.isBreak ? Color.green.opacity(0.2) : Color.orange.opacity(0.2)
         }
         return Color.white.opacity(0.08)
     }
@@ -1152,25 +1164,48 @@ class QuickNotesManager {
                 .replacingOccurrences(of: "\r\n", with: "<br>")
                 .replacingOccurrences(of: "\n", with: "<br>")
             
+            // AppleScript to create note directly in Notes.app
             let scriptSource = """
             tell application "Notes"
-                tell default account
-                    make new note at folder "Notes" with properties {body: "<div><strong>Notchify Quick Note:</strong></div><div>\(escaped)</div>"}
-                end tell
+                try
+                    make new note with properties {body:"<div><b>Notchify Quick Note:</b></div><br><div>\(escaped)</div>"}
+                on error
+                    try
+                        tell account 1
+                            make new note with properties {body:"<div><b>Notchify Quick Note:</b></div><br><div>\(escaped)</div>"}
+                        end tell
+                    on error
+                        try
+                            tell default account
+                                make new note with properties {body:"<div><b>Notchify Quick Note:</b></div><br><div>\(escaped)</div>"}
+                            end tell
+                        end try
+                    end try
+                end try
             end tell
             """
             
+            // 1. Try NSAppleScript execution
             var error: NSDictionary?
             if let script = NSAppleScript(source: scriptSource) {
-                script.executeAndReturnError(&error)
-                let ok = (error == nil)
-                DispatchQueue.main.async {
-                    completion(ok)
+                let _ = script.executeAndReturnError(&error)
+                if error == nil {
+                    DispatchQueue.main.async { completion(true) }
+                    return
                 }
-            } else {
-                DispatchQueue.main.async {
-                    completion(false)
-                }
+            }
+            
+            // 2. Fallback to /usr/bin/osascript via Process
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            proc.arguments = ["-e", scriptSource]
+            do {
+                try proc.run()
+                proc.waitUntilExit()
+                let ok = (proc.terminationStatus == 0)
+                DispatchQueue.main.async { completion(ok) }
+            } catch {
+                DispatchQueue.main.async { completion(false) }
             }
         }
     }
@@ -1186,6 +1221,7 @@ struct QuickNotesFullView: View {
     @AppStorage("quickActionButton2") private var actionButton2Raw: String = QuickActionType.lock.rawValue
     @AppStorage("notchifyQuickNotes") private var notesText: String = ""
     @State private var showSavedAlert = false
+    @State private var showCopiedAlert = false
     @State private var isShelfTargeted = false
     @State private var isAirDropTargeted = false
     
@@ -1200,32 +1236,35 @@ struct QuickNotesFullView: View {
     var body: some View {
         VStack(spacing: 5) {
             // Top Bar: Action Buttons (left) + Tab Selector (center) + Note Tools (right)
-            HStack(spacing: 6) {
-                // Action Buttons on left
+            HStack(spacing: 8) {
+                // Action Buttons on left (icons only)
                 HStack(spacing: 4) {
                     QuickActionButtonView(actionType: action1, viewModel: viewModel)
                     QuickActionButtonView(actionType: action2, viewModel: viewModel)
                 }
-                .frame(width: 140)
+                .frame(width: 72)
                 
-                // Tabs in center
-                HStack(spacing: 3) {
+                // Tabs in center (icons with tooltips)
+                HStack(spacing: 4) {
                     Button(action: { selectedTab = "files" }) {
-                        HStack(spacing: 3) {
+                        ZStack(alignment: .topTrailing) {
                             Image(systemName: "tray.fill")
-                                .font(.system(size: 8))
-                            Text(fileManager.files.isEmpty ? "Shelf" : "Shelf (\(fileManager.files.count))")
-                                .font(.system(size: 9, weight: .semibold))
-                                .lineLimit(1)
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundColor(.white.opacity(0.55))
+                                .frame(width: 28, height: 24)
+                                .background(
+                                    Capsule().fill(isShelfTargeted ? Color.white.opacity(0.15) : Color.white.opacity(0.04))
+                                )
+                            if !fileManager.files.isEmpty {
+                                Circle()
+                                    .fill(Color.orange)
+                                    .frame(width: 5, height: 5)
+                                    .offset(x: -2, y: 2)
+                            }
                         }
-                        .foregroundColor(.white.opacity(0.5))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule().fill(isShelfTargeted ? Color.white.opacity(0.15) : Color.clear)
-                        )
                     }
                     .buttonStyle(.plain)
+                    .help(fileManager.files.isEmpty ? "File Shelf (Drop files to hold)" : "File Shelf (\(fileManager.files.count) files)")
                     .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
                         selectedTab = "files"
                         fileManager.loadAndAddFiles(from: providers)
@@ -1233,21 +1272,16 @@ struct QuickNotesFullView: View {
                     }
                     
                     Button(action: { selectedTab = "airdrop" }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "airplayaudio")
-                                .font(.system(size: 8))
-                            Text("AirDrop")
-                                .font(.system(size: 9, weight: .semibold))
-                                .lineLimit(1)
-                        }
-                        .foregroundColor(.white.opacity(0.5))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule().fill(isAirDropTargeted ? Color.blue.opacity(0.3) : Color.clear)
-                        )
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(.white.opacity(0.55))
+                            .frame(width: 28, height: 24)
+                            .background(
+                                Capsule().fill(isAirDropTargeted ? Color.blue.opacity(0.3) : Color.white.opacity(0.04))
+                            )
                     }
                     .buttonStyle(.plain)
+                    .help("Instant AirDrop (Drop files to share)")
                     .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
                         selectedTab = "airdrop"
                         fileManager.sendAirDrop(from: providers)
@@ -1255,74 +1289,56 @@ struct QuickNotesFullView: View {
                     }
                     
                     Button(action: { selectedTab = "notes" }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "note.text")
-                                .font(.system(size: 8))
-                            Text("Notes")
-                                .font(.system(size: 9, weight: .semibold))
-                                .lineLimit(1)
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.white.opacity(0.2)))
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(.white)
+                            .frame(width: 28, height: 24)
+                            .background(Capsule().fill(Color.white.opacity(0.25)))
                     }
                     .buttonStyle(.plain)
+                    .help("Quick Notes")
                 }
                 
                 Spacer()
                 
-                // Right Tools: Save to Notes, Copy, Clear
+                // Right Tools: Save to Apple Notes, Copy, Clear (icon-only with tooltips)
                 HStack(spacing: 4) {
-                    if showSavedAlert {
-                        HStack(spacing: 2) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 8.5))
-                                .foregroundColor(.green)
-                            Text("Saved to Notes!")
-                                .font(.system(size: 8.5, weight: .semibold))
-                                .foregroundColor(.green)
-                        }
-                        .transition(.opacity)
-                    } else {
-                        Button(action: saveToNotesApp) {
-                            HStack(spacing: 2) {
-                                Image(systemName: "square.and.pencil")
-                                    .font(.system(size: 8))
-                                Text("Save to Notes")
-                                    .font(.system(size: 8.5, weight: .medium))
-                            }
-                            .foregroundColor(.white.opacity(0.85))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.white.opacity(0.08))
-                            .cornerRadius(5)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    
-                    Button(action: copyToClipboard) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 8.5))
-                            .foregroundColor(.white.opacity(0.6))
-                            .padding(4)
-                            .background(Color.white.opacity(0.06))
-                            .cornerRadius(5)
+                    // Export to Apple Notes button
+                    Button(action: saveToNotesApp) {
+                        Image(systemName: showSavedAlert ? "checkmark.circle.fill" : "square.and.arrow.down")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(showSavedAlert ? .green : .white.opacity(0.85))
+                            .frame(width: 28, height: 24)
+                            .background(showSavedAlert ? Color.green.opacity(0.18) : Color.white.opacity(0.08))
+                            .cornerRadius(6)
                     }
                     .buttonStyle(.plain)
-                    .help("Copy notes")
+                    .help(showSavedAlert ? "Saved to Apple Notes!" : "Save to Apple Notes app")
                     
+                    // Copy to clipboard button
+                    Button(action: copyToClipboard) {
+                        Image(systemName: showCopiedAlert ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(showCopiedAlert ? .green : .white.opacity(0.7))
+                            .frame(width: 28, height: 24)
+                            .background(showCopiedAlert ? Color.green.opacity(0.18) : Color.white.opacity(0.06))
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .help(showCopiedAlert ? "Copied!" : "Copy Notes to Clipboard")
+                    
+                    // Clear notes button
                     if !notesText.isEmpty {
                         Button(action: { notesText = "" }) {
                             Image(systemName: "trash")
-                                .font(.system(size: 8.5))
+                                .font(.system(size: 10.5, weight: .medium))
                                 .foregroundColor(.white.opacity(0.45))
-                                .padding(4)
+                                .frame(width: 28, height: 24)
                                 .background(Color.white.opacity(0.06))
-                                .cornerRadius(5)
+                                .cornerRadius(6)
                         }
                         .buttonStyle(.plain)
-                        .help("Clear notes")
+                        .help("Clear Notes")
                     }
                 }
             }
@@ -1361,7 +1377,7 @@ struct QuickNotesFullView: View {
     }
     
     private func saveToNotesApp() {
-        QuickNotesManager.shared.exportToAppleNotes(text: notesText) { _ in
+        QuickNotesManager.shared.exportToAppleNotes(text: notesText) { success in
             withAnimation(.easeInOut(duration: 0.2)) {
                 showSavedAlert = true
             }
@@ -1370,12 +1386,24 @@ struct QuickNotesFullView: View {
                     showSavedAlert = false
                 }
             }
+            if !success {
+                // Also copy to clipboard so note is never lost
+                copyToClipboard()
+            }
         }
     }
     
     private func copyToClipboard() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(notesText, forType: .string)
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showCopiedAlert = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showCopiedAlert = false
+            }
+        }
     }
 }
 
@@ -1511,85 +1539,81 @@ struct StorageShelfColumnView: View {
 
             // Storage Section (Below the buttons)
             VStack(spacing: 4) {
-                // Tab Selector Header
-                HStack(spacing: 3) {
-                    // Shelf tab
+                // Tab Selector Header (Icon pills with hover tooltips)
+                HStack(spacing: 5) {
+                    // Shelf tab (icon pill)
                     Button(action: { selectedTab = "files" }) {
-                        HStack(spacing: 3) {
+                        ZStack(alignment: .topTrailing) {
                             Image(systemName: "tray.fill")
-                                .font(.system(size: 8))
-                            Text(manager.files.isEmpty ? "Shelf" : "Shelf (\(manager.files.count))")
-                                .font(.system(size: 9, weight: .semibold))
-                                .lineLimit(1)
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundColor(selectedTab == "files" ? .white : .white.opacity(0.55))
+                                .frame(width: 28, height: 22)
+                                .background(
+                                    Capsule()
+                                        .fill(selectedTab == "files" ? Color.white.opacity(0.2) : (isShelfTargeted ? Color.white.opacity(0.12) : Color.white.opacity(0.04)))
+                                )
+                            if !manager.files.isEmpty {
+                                Circle()
+                                    .fill(Color.orange)
+                                    .frame(width: 5, height: 5)
+                                    .offset(x: -2, y: 2)
+                            }
                         }
-                        .foregroundColor(selectedTab == "files" ? .white : .white.opacity(0.5))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(selectedTab == "files" ? Color.white.opacity(0.2) : (isShelfTargeted ? Color.white.opacity(0.12) : Color.clear))
-                        )
                     }
                     .buttonStyle(.plain)
+                    .help(manager.files.isEmpty ? "File Shelf (Drop files to hold)" : "File Shelf (\(manager.files.count) files)")
                     .onDrop(of: [.fileURL], isTargeted: $isShelfTargeted) { providers in
                         selectedTab = "files"
                         manager.loadAndAddFiles(from: providers)
                         return true
                     }
 
-                    // AirDrop tab
+                    // AirDrop tab (icon pill)
                     Button(action: { selectedTab = "airdrop" }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "airplayaudio")
-                                .font(.system(size: 8))
-                            Text("AirDrop")
-                                .font(.system(size: 9, weight: .semibold))
-                                .lineLimit(1)
-                        }
-                        .foregroundColor(selectedTab == "airdrop" ? .white : .white.opacity(0.5))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(selectedTab == "airdrop" ? Color.white.opacity(0.2) : (isAirDropTargeted ? Color.blue.opacity(0.3) : Color.clear))
-                        )
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(selectedTab == "airdrop" ? .white : .white.opacity(0.55))
+                            .frame(width: 28, height: 22)
+                            .background(
+                                Capsule()
+                                    .fill(selectedTab == "airdrop" ? Color.white.opacity(0.2) : (isAirDropTargeted ? Color.blue.opacity(0.3) : Color.white.opacity(0.04)))
+                            )
                     }
                     .buttonStyle(.plain)
+                    .help("Instant AirDrop (Drop files to share)")
                     .onDrop(of: [.fileURL], isTargeted: $isAirDropTargeted) { providers in
                         selectedTab = "airdrop"
                         manager.sendAirDrop(from: providers)
                         return true
                     }
 
-                    // Notes tab
+                    // Notes tab (icon pill)
                     Button(action: { selectedTab = "notes" }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "note.text")
-                                .font(.system(size: 8))
-                            Text("Notes")
-                                .font(.system(size: 9, weight: .semibold))
-                                .lineLimit(1)
-                        }
-                        .foregroundColor(selectedTab == "notes" ? .white : .white.opacity(0.5))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(selectedTab == "notes" ? Color.white.opacity(0.2) : Color.clear)
-                        )
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(selectedTab == "notes" ? .white : .white.opacity(0.55))
+                            .frame(width: 28, height: 22)
+                            .background(
+                                Capsule()
+                                    .fill(selectedTab == "notes" ? Color.white.opacity(0.2) : Color.white.opacity(0.04))
+                            )
                     }
                     .buttonStyle(.plain)
+                    .help("Quick Notes (Expand full width)")
 
                     Spacer()
 
                     if selectedTab == "files" && !manager.files.isEmpty {
                         Button(action: { manager.clearAll() }) {
-                            Text("Clear")
-                                .font(.system(size: 8.5, weight: .medium))
+                            Image(systemName: "trash")
+                                .font(.system(size: 9.5, weight: .medium))
                                 .foregroundColor(.white.opacity(0.45))
-                                .lineLimit(1)
+                                .frame(width: 22, height: 22)
+                                .background(Color.white.opacity(0.04))
+                                .cornerRadius(5)
                         }
                         .buttonStyle(.plain)
+                        .help("Clear All Files from Shelf")
                     }
                 }
                 .padding(.horizontal, 6)
