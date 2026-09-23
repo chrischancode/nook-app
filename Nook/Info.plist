@@ -24,5 +24,8 @@
     <string>w5NwH5KRfE7LfeZ09J8lWx3UQrWTqUbfH4HHBa1OPRk=</string>
     <key>SUEnableAutomaticChecks</key>
     <true/>
+    <key>NSCameraUsageDescription</key>
+    <string>Nook needs camera access to display the Camera Mirror.</string>
 </dict>
 </plist>
+

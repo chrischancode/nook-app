@@ -26,6 +26,7 @@ struct NotchMenuView: View {
     @AppStorage(AppSettings.notchAppearanceStyleKey) private var notchAppearanceStyleRaw = NotchAppearanceStyle.adaptiveArtwork.rawValue
     @AppStorage(AppSettings.musicEdgeGlowEnabledKey) private var musicEdgeGlowEnabled = true
     @AppStorage(AppSettings.vibeGlowEnabledKey) private var vibeGlowEnabled = false
+    @AppStorage("cameraEnabled") private var cameraEnabled: Bool = true
 
     /// Compile-time layout for the menu page. 13 visible rows + 5
     /// dividers (Back, divider, Screen, Sound, Agents..., Performance...,
@@ -186,7 +187,7 @@ struct NotchMenuView: View {
                     }
                 }
 
-                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 9)
+                AccessibilityRow(isEnabled: AXIsProcessTrusted(), primaryTextColor: primaryTextColor, secondaryTextColor: secondaryTextColor, isFocused: viewModel.settingsFocusedIndex == 8)
 
                 Divider()
                     .background(separatorColor)
@@ -197,7 +198,7 @@ struct NotchMenuView: View {
                     label: "Star on GitHub",
                     trailingLabel: appVersion,
                     primaryTextColor: primaryTextColor,
-                    isFocused: viewModel.settingsFocusedIndex == 10
+                    isFocused: viewModel.settingsFocusedIndex == 9
                 ) {
                     if let url = URL(string: "https://github.com/oa1mgo/nook") {
                         NSWorkspace.shared.open(url)
@@ -310,8 +311,8 @@ struct NotchMenuView: View {
                 print("Failed to toggle launch at login: $error")
             }
         case 9: break // Accessibility is read-only
-        case 10: NSWorkspace.shared.open(URL(string: "https://github.com/chrischancode/nook-app")!)
-        case 11: NSApplication.shared.terminate(nil)
+        case 9: NSWorkspace.shared.open(URL(string: "https://github.com/chrischancode/nook-app")!)
+        case 10: NSApplication.shared.terminate(nil)
         default: break
         }
     }
@@ -1025,6 +1026,8 @@ struct AppearanceStylePickerRow: View {
 //  feedback loop eliminated by switching to font-metric row heights in
 //  SettingsPageLayout.swift. Panel height = PageLayout.staticHeight +
 //  PickerLayout.expandedHeight, all compile-time, no measurement.)
+
+
 
 
 

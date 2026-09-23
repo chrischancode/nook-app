@@ -103,6 +103,8 @@ class NotchViewModel: ObservableObject {
     @Published var instancesPagePerformanceRowHeight: CGFloat = 0
     @Published var instancesPageMusicCardHeight: CGFloat = 0
     @Published var instancesPageFileShelfHeight: CGFloat = 0
+    @Published var instancesPageShowsCamera: Bool = false
+    @Published var instancesPageCameraHeight: CGFloat = 0
     @Published var animatedTopCornerRadius: CGFloat = 6
     @Published var animatedBottomCornerRadius: CGFloat = 12
     /// Extra width beyond device notch for closed state activity indicators (music, processing, etc.)
@@ -308,10 +310,15 @@ class NotchViewModel: ObservableObject {
             ? resolvedMusicCardHeight + InstancesPageLayout.contentSpacing
             : 0
         let fileShelfBlockHeight = instancesPageFileShelfHeight + InstancesPageLayout.contentSpacing
+        let cameraBlockHeight: CGFloat = instancesPageShowsCamera ? resolvedCameraHeight + InstancesPageLayout.contentSpacing : 0
         // AI features removed
         let contentHeight: CGFloat = 0
 
-        return chromeHeight + performanceBlockHeight + musicBlockHeight + fileShelfBlockHeight + contentHeight
+        return chromeHeight + performanceBlockHeight + musicBlockHeight + fileShelfBlockHeight + cameraBlockHeight + contentHeight
+    }
+
+    private var resolvedCameraHeight: CGFloat {
+        max(instancesPageCameraHeight, 58)
     }
 
     private var resolvedRowHeight: CGFloat {
@@ -700,7 +707,7 @@ class NotchViewModel: ObservableObject {
     }
 
     /// Total focusable items in the menu page
-    let menuItemCount: Int = 12
+    let menuItemCount: Int = 13
     /// Total focusable items in the shortcuts page (Back + action rows + Restore)
     var shortcutsItemCount: Int { 1 + ShortcutAction.allCases.count + 1 }
     /// Whether the Claude dir picker inside the Agents page is expanded.
@@ -773,6 +780,10 @@ class NotchViewModel: ObservableObject {
         }
     }
 }
+
+
+
+
 
 
 
